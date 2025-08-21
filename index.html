@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editeur de Rapport BRCGS</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.34.5/docxtemplater.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PizZip/3.1.1/pizzip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+    <!-- Barre de menu -->
+    <nav class="menu-bar">
+        <button id="load-docx-btn">Charger DOCX</button>
+        <button id="load-json-btn">Charger JSON</button>
+        <button id="save-json-btn" disabled>Sauvegarder JSON</button>
+        <button id="toggle-comments-btn" disabled>Afficher Commentaires</button>
+        <input type="password" id="api-key-input" placeholder="Clé API Groq">
+        <button id="set-api-key-btn">Définir</button>
+        <span class="status" id="status">Prêt.</span>
+    </nav>
+
+    <!-- Indicateur de chargement -->
+    <div id="loading-indicator">
+        <div class="spinner"></div>
+        <span id="loading-message">Traitement...</span>
+    </div>
+
+    <!-- Conteneur principal -->
+    <div class="main-container">
+        <!-- Menu latéral -->
+        <aside class="sidebar">
+            <h3>Navigation</h3>
+            <ul id="sidebar-nav"></ul>
+        </aside>
+
+        <!-- Zone de contenu -->
+        <main class="content-area">
+            <div id="report-output">
+                <div id="document-info"></div>
+                <div id="document-structure"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Popup IA -->
+    <div id="ai-modal" class="modal">
+        <div class="modal-content">
+            <h3>Suggestion d'amélioration IA</h3>
+            <div class="original-text-wrapper">
+                <p><strong>Texte original:</strong></p>
+                <pre id="original-text" class="text-box"></pre>
+            </div>
+            <div class="suggestion-wrapper">
+                <p><strong>Suggestion:</strong></p>
+                <div class="suggestion-container">
+                    <pre id="suggested-text" class="text-box"></pre>
+                </div>
+                <button id="expand-suggestion">Afficher tout</button>
+            </div>
+            <div class="modal-buttons">
+                <button id="accept-suggestion">Accepter</button>
+                <button id="reject-suggestion">Refuser</button>
+                <button id="cancel-suggestion">Annuler</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

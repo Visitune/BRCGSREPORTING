@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editeur de Rapport BRCGS avec IA</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.34.5/docxtemplater.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PizZip/3.1.1/pizzip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+
+        /* Barre de menu supérieure */
+        .menu-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background-color: #2c3e50;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .menu-bar button, .menu-bar input {
+            margin-right: 15px;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+
+        .menu-bar button:hover {
+            background-color: #2980b9;
+        }
+
+        .menu-bar button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .menu-bar .status {
+            margin-left: auto;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .menu-bar .api-key-input {
+            width: 300px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        /* Conteneur principal */
+        .main-container {
+            display: flex;
+            width: 100%;
+            margin-top: 60px; /* Hauteur de la barre de menu */
+            flex: 1; /* Prend tout l'espace restant */
+        }
+
+        /* Menu latéral */
+        .sidebar {
+            width: 250px;
+            background-color: #ecf0f1;
+            padding: 20px 0;
+            overflow-y: auto;
+            height: calc(100vh - 60px);
+            border-right: 1px solid #bdc3c7;
+            position: sticky;
+            top: 60px;
+        }
+
+        .sidebar h3 {
+            padding: 0 20px 10px 20px;
+            border-bottom: 1px solid #bdc3c7;
+            margin-bottom: 15px;
+        }
+
+        .sidebar ul {
+            list-style: none;
+        }
+
+        .sidebar li {
+            padding: 8px 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sidebar li:hover {
+            background-color: #d6dbdf;
+        }
+
+        .sidebar li.active {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+
+        .sidebar .chapter-item {
+            font-weight: bold;
+            padding-left: 20px;
+        }
+
+        .sidebar .section-item {
+            padding-left: 40px;
+            font-size: 0.95em;
+        }
+
+        .sidebar .subsection-item {
+            padding-left: 60px;
+            font-size: 0.9em;
+            color: #555;
+        }
+
+        /* Zone de contenu principale */
+        .content-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            height: calc(100vh - 60px);
+        }
+
+        #report-output {
+            display: none; /* Affiché via JS */
+        }
+
+        #document-info {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        #document-info h2 {
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        #document-info p {
+            margin: 5px 0;
+        }
+
+        /* Structure du rapport */
+        .report-element {
+            background-color: #fff;
+            margin-bottom: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .report-element > h2, .report-element > h3, .report-element > h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #eee;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .report-element > p {
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .report-element > table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+
+        .report-element > table, .report-element > table th, .report-element > table td {
+            border: 1px solid #ddd;
+        }
+
+        .report-element > table th, .report-element > table td {
+            padding: 8px;
+            text-align: left;
+        }
+
+        .report-element > table th {
+            background-color: #f2f2f2;
+        }
+
+        .report-element > table caption {
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-align: left;
+        }
+
+        /* Édition */
+        [contenteditable]:focus {
+            outline: 2px solid #3498db;
+            background-color: #fafcff;
+        }
+
+        /* Boutons */
+        .btn-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-container button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.85em;
+        }
+
+        .add-comment-btn {
+            background-color: #95a5a6;
+            color: white;
+        }
+
+        .add-comment-btn:hover {
+            background-color: #7f8c8d;
+        }
+
+        .ai-suggest-btn {
+            background-color: #9b59b6; /* Couleur violette pour l'IA */
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 5px; /* Espacement entre l'icône et le texte */
+        }
+
+        .ai-suggest-btn:hover {
+            background-color: #8e44ad;
+        }
+
+        .ai-suggest-btn:disabled {
+             background-color: #bdc3c7;
+             cursor: not-allowed;
+         }
+
+        /* Commentaires */
+        .comments-section {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px dashed #ccc;
+        }
+
+        .comment {
+            background-color: #f9f9f9;
+            padding: 8px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            border-left: 3px solid #3498db;
+        }
+
+        .comment-header {
+            font-weight: bold;
+            font-size: 0.8em;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+        }
+
+        /* Popup */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1001;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            width: 80%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h3 {
+            margin-top: 0;
+        }
+
+        .modal-content textarea {
+            width: 100%;
+            height: 150px;
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .modal-buttons button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .modal-buttons .accept {
+            background-color: #27ae60;
+            color: white;
+        }
+
+        .modal-buttons .accept:hover {
+            background-color: #219653;
+        }
+
+        .modal-buttons .reject {
+            background-color: #e74c3c;
+            color: white;
+        }
+
+        .modal-buttons .reject:hover {
+            background-color: #c0392b;
+        }
+
+        .modal-buttons .cancel {
+            background-color: #95a5a6;
+            color: white;
+        }
+
+        .modal-buttons .cancel:hover {
+            background-color: #7f8c8d;
+        }
+
+
+        /* Indicateur de chargement */
+        #loading-indicator {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1002;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 1.5em;
+            flex-direction: column;
+        }
+
+        #loading-message {
+            margin-top: 10px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+                top: 0;
+                border-right: none;
+                border-bottom: 1px solid #bdc3c7;
+            }
+            .content-area {
+                height: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Barre de menu supérieure -->
+    <div class="menu-bar">
+        <input type="file" id="docx-input" accept=".docx" style="display:none;">
+        <input type="file" id="json-input" accept=".json" style="display:none;">
+        <button id="load-docx-btn">Charger DOCX</button>
+        <button id="load-json-btn">Charger JSON</button>
+        <button id="save-json-btn" disabled>Sauvegarder JSON</button>
+        <button id="toggle-comments-btn" disabled>Afficher Commentaires</button>
+
+        <input type="password" id="api-key-input" class="api-key-input" placeholder="Entrez votre clé API Groq">
+        <button id="set-api-key-btn">Définir la clé API</button>
+
+        <span class="status" id="status">Prêt. Chargez un fichier DOCX ou JSON.</span>
+    </div>
+
+    <!-- Indicateur de chargement -->
+    <div id="loading-indicator">
+        <div>Chargement...</div>
+        <div id="loading-message"></div>
+    </div>
+
+    <!-- Conteneur principal -->
+    <div class="main-container">
+        <!-- Menu latéral -->
+        <div class="sidebar">
+            <h3>Navigation</h3>
+            <ul id="sidebar-nav">
+                <!-- La navigation sera injectée ici -->
+            </ul>
+        </div>
+
+        <!-- Zone d'affichage du rapport -->
+        <div class="content-area">
+            <div id="report-output">
+                <div id="document-info"></div>
+                <div id="document-structure"><!-- La structure (chapitres, sections, etc.) sera injectée ici --></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Popup pour suggestions IA -->
+    <div id="ai-modal" class="modal">
+        <div class="modal-content">
+            <h3>Suggestion d'amélioration IA</h3>
+            <p><strong>Texte original :</strong></p>
+            <div id="original-text" style="background-color: #f0f0f0; padding: 10px; border-radius: 4px; margin-bottom: 10px; white-space: pre-wrap;"></div>
+            <p><strong>Suggestion :</strong></p>
+            <textarea id="suggested-text"></textarea>
+            <div class="modal-buttons">
+                <button class="accept" id="accept-suggestion">Accepter</button>
+                <button class="reject" id="reject-suggestion">Refuser</button>
+                <button class="cancel" id="cancel-suggestion">Annuler</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Variables Globales ---
+        let reportData = null;
+        let idCounter = 0;
+        let commentsVisible = false;
+        let groqApiKey = sessionStorage.getItem('groqApiKey') || ''; // Charger depuis sessionStorage
+        let templateModelData = null; // Pour stocker le modèle JSON
+
+        // --- Références aux Éléments DOM ---
+        let docxInput, jsonInput, loadDocxBtn, loadJsonBtn, saveJsonBtn, toggleCommentsBtn,
+            statusElement, loadingElement, loadingMessageElement, outputContainer,
+            docInfoElement, docStructureElement, sidebarNav, apiKeyInput, setApiKeyBtn;
+
+        // --- Configuration de l'API Groq ---
+        const GROQ_API_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
+        const GROQ_MODEL = "llama3-8b-8192"; // Utilisation d'un modèle plus stable et accessible
+
+        // --- Fonctions Utilitaires ---
+        function generateId() {
+            return `elem-${idCounter++}`;
+        }
+
+        function showLoading(message) {
+            if (statusElement) statusElement.textContent = message;
+            if(loadingMessageElement) loadingMessageElement.textContent = message;
+            if (loadingElement) loadingElement.style.display = 'flex';
+            if (outputContainer) outputContainer.style.display = 'none';
+        }
+
+        function hideLoading() {
+            if (loadingElement) loadingElement.style.display = 'none';
+            const reportDataExists = !!reportData;
+            if (saveJsonBtn) saveJsonBtn.disabled = !reportDataExists;
+            if (toggleCommentsBtn) toggleCommentsBtn.disabled = !reportDataExists;
+            if (outputContainer) outputContainer.style.display = reportDataExists ? 'block' : 'none';
+            if(reportDataExists && statusElement) {
+                const source = reportData.metadata?.source === 'json' ? 'JSON' : 'DOCX';
+                updateStatus(`Fichier ${source} chargé. Prêt pour édition ou sauvegarde.`);
+            }
+        }
+
+        function updateStatus(message, isError = false) {
+            if (statusElement) {
+                statusElement.textContent = message;
+                statusElement.style.color = isError ? 'red' : 'white';
+            }
+        }
+
+        function clearReportDisplay() {
+            if (docInfoElement) docInfoElement.innerHTML = '';
+            if (docStructureElement) docStructureElement.innerHTML = '';
+            if (sidebarNav) sidebarNav.innerHTML = ''; // Vider le menu latéral
+            reportData = null;
+            idCounter = 0;
+            commentsVisible = false;
+            if (outputContainer) outputContainer.style.display = 'none';
+            if (saveJsonBtn) saveJsonBtn.disabled = true;
+            if (toggleCommentsBtn) toggleCommentsBtn.disabled = true;
+            if (statusElement) updateStatus("Prêt. Chargez un fichier DOCX ou JSON.");
+        }
+
+        function findElementById(id, data = reportData) {
+            if (!data || typeof data !== 'object') return null;
+            if (data.id === id) return data;
+
+            if (Array.isArray(data)) {
+                for (const item of data) {
+                    const found = findElementById(id, item);
+                    if (found) return found;
+                }
+            } else {
+                for (const key in data) {
+                    if (data.hasOwnProperty(key) && typeof data[key] === 'object') {
+                        const found = findElementById(id, data[key]);
+                        if (found) return found;
+                    }
+                }
+            }
+            return null;
+        }
+
+        function findMaxId(data) {
+             let maxId = 0;
+             function traverse(obj) {
+                 if (obj && typeof obj === 'object') {
+                     if (obj.id && typeof obj.id === 'string' && obj.id.startsWith('elem-')) {
+                         const numPart = parseInt(obj.id.split('-')[1], 10);
+                         if (!isNaN(numPart) && numPart > maxId) {
+                             maxId = numPart;
+                         }
+                     }
+                     if (Array.isArray(obj)) {
+                         obj.forEach(traverse);
+                     } else {
+                         Object.values(obj).forEach(traverse);
+                     }
+                 }
+             }
+             traverse(data);
+             return maxId;
+         }
+
+        // --- Gestion de l'API IA ---
+        async function fetchAISuggestion(text, context = {}) {
+            if (!groqApiKey) {
+                alert("Clé API Groq non définie. Veuillez la saisir dans la barre de menu.");
+                return null;
+            }
+
+            const prompt = `Tu es un assistant expert en rédaction de rapports d'audit BRCGS (Brand Reputation through Compliance Global Standards).
+Améliore la clarté, la concision et la qualité professionnelle du texte fourni.
+Utilise un ton factuel, clair et professionnel.
+Ne modifie pas le sens ou les faits présentés.
+Ne génère pas de texte supplémentaire au-delà de l'amélioration demandée.
+Ne réponds pas avec des explications, seulement avec le texte amélioré.
+
+Texte à améliorer :
+"${text}"
+
+Contexte (facultatif) :
+Titre du chapitre : ${context.chapterTitle || 'N/A'}
+Type d'élément : ${context.elementType || 'N/A'}
+
+Texte amélioré :`;
+
+            try {
+                const response = await fetch(GROQ_API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${groqApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: GROQ_MODEL,
+                        messages: [{ role: 'user', content: prompt }],
+                        temperature: 0.3 // Un peu de créativité mais reste factuel
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Erreur API Groq (${response.status}): ${errorData.error?.message || 'Erreur inconnue'}`);
+                }
+
+                const data = await response.json();
+                const suggestion = data.choices[0]?.message?.content?.trim();
+                if (!suggestion) {
+                    throw new Error("La réponse de l'API ne contient pas de suggestion.");
+                }
+                return suggestion;
+
+            } catch (error) {
+                console.error("Erreur lors de l'appel à l'API Groq:", error);
+                updateStatus(`Erreur IA: ${error.message}`, true);
+                return null;
+            }
+        }
+
+        // --- Fonctions de Rendu ---
+        function createCommentButton(elementId) {
+            const btn = document.createElement('button');
+            btn.classList.add('add-comment-btn');
+            btn.textContent = '+';
+            btn.title = "Ajouter un commentaire";
+            btn.dataset.targetId = elementId;
+            btn.addEventListener('click', handleAddCommentClick);
+            return btn;
+        }
+
+        function createAISuggestButton(elementId) {
+            const btn = document.createElement('button');
+            btn.classList.add('ai-suggest-btn');
+            btn.innerHTML = '&#129302;'; // Emoji robot ou icône
+            btn.title = "Demander une suggestion d'amélioration";
+            btn.dataset.targetId = elementId;
+            btn.addEventListener('click', handleAISuggestClick);
+            return btn;
+        }
+
+        function renderComments(containerElement, itemData) {
+            let commentSection = containerElement.querySelector('.comments-section');
+            if (!commentSection) {
+                commentSection = document.createElement('div');
+                commentSection.classList.add('comments-section');
+                containerElement.appendChild(commentSection);
+            }
+            commentSection.innerHTML = '';
+            commentSection.style.display = commentsVisible ? 'block' : 'none';
+
+            if (itemData.comments && itemData.comments.length > 0) {
+                itemData.comments.forEach(comment => {
+                    const commentDiv = document.createElement('div');
+                    commentDiv.classList.add('comment');
+                    commentDiv.innerHTML = `
+                        <div class="comment-header">${comment.author || 'Anonyme'} - ${new Date(comment.timestamp).toLocaleString()}</div>
+                        <div class="comment-text">${comment.text}</div>
+                    `;
+                    commentSection.appendChild(commentDiv);
+                });
+            }
+        }
+
+        function buildSidebarNav(data) {
+             const navList = document.getElementById('sidebar-nav');
+             if (!navList) return;
+
+             navList.innerHTML = ''; // Vider avant de reconstruire
+
+             function addItem(item, levelClass) {
+                 const li = document.createElement('li');
+                 li.textContent = item.title || (item.text ? item.text.substring(0, 50) + (item.text.length > 50 ? '...' : '') : 'Élément sans titre/texte');
+                 li.classList.add(levelClass);
+                 li.dataset.elementId = item.id;
+                 li.addEventListener('click', () => {
+                     // Retirer la classe active de tous les éléments
+                     navList.querySelectorAll('li').forEach(el => el.classList.remove('active'));
+                     // Ajouter la classe active à l'élément cliqué
+                     li.classList.add('active');
+                     // Faire défiler vers l'élément dans le contenu principal
+                     const targetElement = document.querySelector(`[data-id="${item.id}"]`);
+                     if (targetElement) {
+                         targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                         // Optionnel: ajouter un effet visuel temporaire
+                         targetElement.style.outline = '2px solid #3498db';
+                         setTimeout(() => {
+                             targetElement.style.outline = '';
+                         }, 2000);
+                     }
+                 });
+                 navList.appendChild(li);
+             }
+
+             if (data.chapters && Array.isArray(data.chapters)) {
+                 data.chapters.forEach(chapter => {
+                     addItem(chapter, 'chapter-item');
+                     if (chapter.sections && Array.isArray(chapter.sections)) {
+                         chapter.sections.forEach(section => {
+                             addItem(section, 'section-item');
+                             if (section.subsections && Array.isArray(section.subsections)) {
+                                 section.subsections.forEach(subsection => {
+                                     addItem(subsection, 'subsection-item');
+                                 });
+                             }
+                         });
+                     }
+                 });
+             }
+         }
+
+
+        function displayReport_enhanced() {
+            if (!reportData || !docInfoElement || !docStructureElement) return;
+
+            // Afficher les infos du document
+            docInfoElement.innerHTML = `
+                <h2>Informations du Document</h2>
+                <p><strong>Nom du fichier original:</strong> ${reportData.metadata?.originalFilename || 'N/A'}</p>
+                <p><strong>Date de traitement:</strong> ${reportData.metadata?.processingTimestamp ? new Date(reportData.metadata.processingTimestamp).toLocaleString() : 'N/A'}</p>
+                <p><strong>Source:</strong> ${reportData.metadata?.source === 'json' ? 'Fichier JSON' : 'Fichier DOCX'}</p>
+            `;
+
+            // Effacer la structure avant de la repeupler
+            docStructureElement.innerHTML = '';
+
+            // Fonction récursive pour afficher les éléments de contenu
+            function displayContentItems(items, parentElement) {
+                if (!Array.isArray(items)) return;
+                items.forEach(item => {
+                    const container = document.createElement('div');
+                    container.classList.add('report-element');
+                    container.dataset.id = item.id;
+
+                    if (item.type === 'paragraph') {
+                        const p = document.createElement('p');
+                        p.contentEditable = "true";
+                        p.dataset.id = item.id;
+                        p.textContent = item.text || '';
+                        p.addEventListener('input', handleContentEdit);
+
+                        const btnContainer = document.createElement('div');
+                        btnContainer.classList.add('btn-container');
+                        btnContainer.appendChild(createCommentButton(item.id));
+                        btnContainer.appendChild(createAISuggestButton(item.id));
+
+                        container.appendChild(p);
+                        container.appendChild(btnContainer);
+                        renderComments(container, item);
+
+                    } else if (item.type === 'table') {
+                        const table = document.createElement('table');
+                        table.dataset.id = item.id;
+
+                        if (item.caption && item.caption.text) {
+                            const caption = document.createElement('caption');
+                            caption.contentEditable = "true";
+                            caption.dataset.id = item.caption.id;
+                            caption.textContent = item.caption.text;
+                            caption.addEventListener('input', handleContentEdit);
+                            table.appendChild(caption);
+                        }
+
+                        item.rows.forEach(rowData => {
+                            const tr = table.insertRow();
+                            rowData.cells.forEach(cellData => {
+                                const td = tr.insertCell();
+                                td.contentEditable = "true";
+                                td.dataset.id = cellData.id;
+                                td.colSpan = cellData.colspan || 1;
+                                // Gestion basique de vMerge (affichage uniquement)
+                                if (cellData.vMerge === 'continue') {
+                                    td.classList.add('vmerged-continue');
+                                    td.textContent = '...'; // Indicateur visuel
+                                } else {
+                                    td.textContent = cellData.text || '';
+                                }
+                                td.addEventListener('input', handleContentEdit);
+
+                                const cellBtnContainer = document.createElement('div');
+                                cellBtnContainer.classList.add('btn-container');
+                                cellBtnContainer.style.marginTop = '5px';
+                                cellBtnContainer.appendChild(createCommentButton(cellData.id));
+                                cellBtnContainer.appendChild(createAISuggestButton(cellData.id));
+                                td.appendChild(cellBtnContainer);
+
+                                renderComments(td, cellData);
+                            });
+                        });
+
+                        const tableBtnContainer = document.createElement('div');
+                        tableBtnContainer.classList.add('btn-container');
+                        tableBtnContainer.appendChild(createCommentButton(item.id));
+                        tableBtnContainer.appendChild(createAISuggestButton(item.id));
+
+                        container.appendChild(table);
+                        container.appendChild(tableBtnContainer);
+                        renderComments(container, item);
+
+                    } else {
+                        console.warn("Type d'élément non reconnu pour le rendu:", item);
+                    }
+                    parentElement.appendChild(container);
+                });
+            }
+
+            // Fonction récursive pour afficher la structure (chapitres, sections, etc.)
+            function displayStructure(items, parentElement) {
+                if (!Array.isArray(items)) return;
+                items.forEach(item => {
+                    const container = document.createElement('div');
+                    container.classList.add('report-element');
+                    container.dataset.id = item.id;
+
+                    let titleElement;
+                    if (item.level === 1) titleElement = document.createElement('h2');
+                    else if (item.level === 2) titleElement = document.createElement('h3');
+                    else if (item.level === 3) titleElement = document.createElement('h4');
+                    else titleElement = document.createElement('h5'); // Par défaut
+
+                    titleElement.contentEditable = "true";
+                    titleElement.dataset.id = item.id;
+                    titleElement.textContent = item.title || 'Titre sans nom';
+                    titleElement.addEventListener('input', handleContentEdit);
+
+                    const titleBtnContainer = document.createElement('div');
+                    titleBtnContainer.classList.add('btn-container');
+                    titleBtnContainer.appendChild(createCommentButton(item.id));
+                    titleBtnContainer.appendChild(createAISuggestButton(item.id));
+
+                    container.appendChild(titleElement);
+                    container.appendChild(titleBtnContainer);
+                    renderComments(container, item);
+
+                    // Afficher le contenu direct de cet élément
+                    if (item.content && Array.isArray(item.content)) {
+                        displayContentItems(item.content, container);
+                    }
+
+                    // Afficher les éléments enfants (sections, sous-sections)
+                    if (item.subsections && Array.isArray(item.subsections)) {
+                        displayStructure(item.subsections, container);
+                    }
+                    if (item.sections && Array.isArray(item.sections)) {
+                        displayStructure(item.sections, container);
+                    }
+
+                    parentElement.appendChild(container);
+                });
+            }
+
+            // Afficher les chapitres et leur contenu
+            if (reportData.chapters && Array.isArray(reportData.chapters)) {
+                displayStructure(reportData.chapters, docStructureElement);
+            }
+
+            // Construire le menu latéral
+            buildSidebarNav(reportData);
+        }
+
+
+        // --- Gestion des Événements ---
+        function handleContentEdit(event) {
+            const targetElement = event.target;
+            const elementId = targetElement.dataset.id || targetElement.closest('[data-id]')?.dataset.id;
+            if (!elementId) {
+                console.error("Impossible de trouver data-id pour l'élément édité:", targetElement);
+                return;
+            }
+            const dataObject = findElementById(elementId);
+            if (dataObject) {
+                const newText = targetElement.innerText.trim();
+                if (dataObject.hasOwnProperty('text')) {
+                    if (dataObject.text !== newText) {
+                        dataObject.text = newText;
+                        // console.log(`Données mises à jour pour ID ${elementId}: nouveau texte = "${newText.substring(0, 50)}..."`);
+                    }
+                } else if (dataObject.hasOwnProperty('title') && (targetElement.nodeName.startsWith('H') || targetElement.nodeName === 'CAPTION')) {
+                    if (dataObject.title !== newText) {
+                        dataObject.title = newText;
+                        // console.log(`Données mises à jour pour ID ${elementId}: nouveau titre = "${newText.substring(0, 50)}..."`);
+                        // Mettre à jour le menu latéral si le titre change
+                        const navItem = document.querySelector(`#sidebar-nav li[data-element-id="${elementId}"]`);
+                        if (navItem) {
+                            navItem.textContent = newText.substring(0, 50) + (newText.length > 50 ? '...' : '');
+                        }
+                    }
+                } else {
+                    console.error(`Objet trouvé pour ID ${elementId}, mais ne possède ni propriété 'text' ni 'title' attendue.`, dataObject, targetElement);
+                }
+            } else {
+                console.error(`Impossible de trouver l'objet de données correspondant à l'ID: ${elementId}`);
+            }
+        }
+
+        function handleAddCommentClick(event) {
+            const targetId = event.currentTarget.dataset.targetId;
+            const commentText = prompt(`Ajouter un commentaire pour l'élément (ID: ${targetId}): (Laissez vide pour annuler)`);
+            if (commentText && commentText.trim() !== '') {
+                addComment(targetId, commentText.trim());
+            } else if (commentText === '') {
+                console.log("Ajout de commentaire annulé (texte vide).");
+            } else {
+                console.log("Ajout de commentaire annulé.");
+            }
+        }
+
+        function addComment(targetId, text) {
+            const targetElementData = findElementById(targetId);
+            if (targetElementData) {
+                if (!targetElementData.comments) {
+                    targetElementData.comments = [];
+                }
+                const newComment = {
+                    id: generateId(),
+                    text: text,
+                    author: "Utilisateur",
+                    timestamp: new Date().toISOString()
+                };
+                targetElementData.comments.push(newComment);
+                console.log(`Commentaire ajouté à l'élément ${targetId}:`, newComment);
+                displayReport_enhanced();
+                updateStatus(`Commentaire ajouté à l'élément ${targetId}.`);
+                if (!commentsVisible) {
+                    handleToggleComments();
+                }
+            } else {
+                console.error(`Impossible d'ajouter le commentaire: Élément cible ${targetId} non trouvé.`);
+                updateStatus(`Erreur: élément ${targetId} introuvable pour ajout de commentaire.`, true);
+            }
+        }
+
+        async function handleAISuggestClick(event) {
+             const targetId = event.currentTarget.dataset.targetId;
+             const dataObject = findElementById(targetId);
+
+             if (!dataObject || !dataObject.text) {
+                 alert("Impossible de trouver le texte à améliorer pour cet élément.");
+                 return;
+             }
+
+             // Trouver le contexte (chapitre, type)
+             let context = { elementType: dataObject.type || 'inconnu' };
+             // Trouver le chapitre parent (simplifié)
+             if (reportData && reportData.chapters) {
+                 for(const chapter of reportData.chapters) {
+                     if(chapter.id === targetId || (chapter.content && chapter.content.some(c => c.id === targetId))) {
+                         context.chapterTitle = chapter.title;
+                         break;
+                     }
+                     if(chapter.sections) {
+                         for(const section of chapter.sections) {
+                             if(section.id === targetId || (section.content && section.content.some(c => c.id === targetId))) {
+                                 context.chapterTitle = chapter.title;
+                                 break;
+                             }
+                             if(section.subsections) {
+                                 for(const subsection of section.subsections) {
+                                     if(subsection.id === targetId || (subsection.content && subsection.content.some(c => c.id === targetId))) {
+                                         context.chapterTitle = chapter.title;
+                                         break;
+                                     }
+                                 }
+                                 if(context.chapterTitle) break;
+                             }
+                         }
+                         if(context.chapterTitle) break;
+                     }
+                 }
+             }
+
+             showLoading("Demande de suggestion à l'IA...");
+             const suggestion = await fetchAISuggestion(dataObject.text, context);
+             hideLoading();
+
+             if (suggestion) {
+                 const modal = document.getElementById('ai-modal');
+                 const originalTextEl = document.getElementById('original-text');
+                 const suggestedTextEl = document.getElementById('suggested-text');
+                 const acceptBtn = document.getElementById('accept-suggestion');
+                 const rejectBtn = document.getElementById('reject-suggestion');
+                 const cancelBtn = document.getElementById('cancel-suggestion');
+
+                 originalTextEl.textContent = dataObject.text;
+                 suggestedTextEl.value = suggestion;
+
+                 function closeModal() {
+                     modal.style.display = 'none';
+                     acceptBtn.removeEventListener('click', onAccept);
+                     rejectBtn.removeEventListener('click', onReject);
+                     cancelBtn.removeEventListener('click', onCancel);
+                 }
+
+                 function onAccept() {
+                     const targetElement = document.querySelector(`[data-id="${targetId}"]`);
+                     if (targetElement) {
+                         targetElement.textContent = suggestedTextEl.value; // Met à jour l'affichage
+                         // Déclencher l'événement input pour que handleContentEdit mette à jour les données
+                         const inputEvent = new Event('input', { bubbles: true });
+                         targetElement.dispatchEvent(inputEvent);
+                         updateStatus("Suggestion acceptée et appliquée.");
+                     }
+                     closeModal();
+                 }
+
+                 function onReject() {
+                     updateStatus("Suggestion refusée.");
+                     closeModal();
+                 }
+
+                 function onCancel() {
+                     closeModal();
+                 }
+
+                 acceptBtn.addEventListener('click', onAccept);
+                 rejectBtn.addEventListener('click', onReject);
+                 cancelBtn.addEventListener('click', onCancel);
+
+                 modal.style.display = 'flex';
+             } else {
+                 // Le message d'erreur a déjà été affiché par fetchAISuggestion
+             }
+         }
+
+
+        function handleToggleComments() {
+            commentsVisible = !commentsVisible;
+            if (toggleCommentsBtn) {
+                toggleCommentsBtn.textContent = commentsVisible ? 'Masquer Commentaires' : 'Afficher Commentaires';
+            }
+            displayReport_enhanced(); // Re-rendre pour appliquer la visibilité
+        }
+
+        function handleSaveJson() {
+            if (!reportData) {
+                updateStatus("Aucune donnée à sauvegarder.", true);
+                return;
+            }
+            try {
+                reportData.metadata = reportData.metadata || {};
+                reportData.metadata.lastId = idCounter;
+                reportData.metadata.commentsVisible = commentsVisible;
+                reportData.metadata.savedTimestamp = new Date().toISOString();
+
+                const jsonString = JSON.stringify(reportData, null, 2);
+                const blob = new Blob([jsonString], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const originalFilename = reportData.metadata.originalFilename || 'report';
+                const filename = originalFilename.replace(/\.(docx|json)$/i, '') + '_edited.json';
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                updateStatus(`Données sauvegardées dans ${filename}.`);
+            } catch (error) {
+                updateStatus(`Erreur lors de la sauvegarde JSON: ${error.message}`, true);
+                console.error("Erreur d'exportation JSON:", error);
+            }
+        }
+
+        function loadJsonData(jsonString, sourceFilename = 'données JSON') {
+            try {
+                clearReportDisplay();
+                const parsedData = JSON.parse(jsonString);
+                if (typeof parsedData !== 'object' || parsedData === null || (!parsedData.chapters && !parsedData.metadata)) {
+                    throw new Error("Le fichier JSON ne semble pas contenir une structure de rapport valide.");
+                }
+                reportData = parsedData;
+                idCounter = reportData.metadata?.lastId || (findMaxId(reportData) + 1) || 0;
+                commentsVisible = reportData.metadata?.commentsVisible || false;
+                reportData.metadata = reportData.metadata || {};
+                reportData.metadata.source = 'json';
+                reportData.metadata.originalFilename = sourceFilename;
+                console.log("Données JSON chargées. Métadonnées:", reportData.metadata);
+                console.log("Compteur d'ID restauré à:", idCounter);
+                displayReport_enhanced();
+                updateStatus(`Données chargées depuis ${sourceFilename}.`);
+            } catch (error) {
+                updateStatus(`Erreur lors du chargement/parsing JSON: ${error.message}`, true);
+                console.error("Erreur de chargement JSON:", error);
+                clearReportDisplay();
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function handleDocxFileSelect(event) {
+            console.log("- handleDocxFileSelect DÉBUT -");
+            const file = event.target.files[0];
+            if (file) {
+                console.log(`Fichier DOCX sélectionné: ${file.name}`);
+                if (file.name.toLowerCase().endsWith('.docx')) {
+                    showLoading(`Chargement de ${file.name}...`);
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        console.log("- DOCX FileReader ONLOAD -");
+                        try {
+                            // --- Logique de traitement DOCX ---
+                            const zip = new JSZip();
+                            const content = await zip.loadAsync(e.target.result);
+                            const xmlString = await content.files['word/document.xml'].async('string');
+                            const parser = new DOMParser();
+                            const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
+                            const parserError = xmlDoc.getElementsByTagName("parsererror");
+                            if (parserError.length > 0) {
+                                throw new Error("Erreur lors du parsing du XML du document.");
+                            }
+                            console.log("XML Parsé avec succès.");
+
+                            clearReportDisplay();
+                            reportData = {
+                                metadata: {
+                                    originalFilename: file.name,
+                                    source: 'docx',
+                                    processingTimestamp: new Date().toISOString(),
+                                    info: {}
+                                },
+                                chapters: []
+                            };
+
+                            let currentChapter = null;
+                            let currentSection = null;
+                            let currentSubsection = null;
+                            let pendingContentBeforeFirstChapter = [];
+
+                            const body = xmlDoc.getElementsByTagName('w:document')[0]?.getElementsByTagName('w:body')[0];
+                            if (!body) throw new Error("Balise <w:body> non trouvée dans document.xml");
+                            const elements = Array.from(body.children);
+                            console.log(`Traitement de ${elements.length} éléments directs dans w:body.`);
+
+                            function getParagraphText(element) {
+                                if (!element) return '';
+                                const textNodes = element.getElementsByTagName('w:t');
+                                let text = '';
+                                for (let i = 0; i < textNodes.length; i++) {
+                                    text += textNodes[i].textContent || '';
+                                }
+                                return text;
+                            }
+
+                            function getParagraphStyle(element) {
+                                const pPr = element.getElementsByTagName('w:pPr')[0];
+                                if (pPr) {
+                                    const styleNode = pPr.getElementsByTagName('w:pStyle')[0];
+                                    if (styleNode) {
+                                        const val = styleNode.getAttribute('w:val');
+                                        if (val) return val;
+                                    }
+                                }
+                                return 'Normal';
+                            }
+
+                            function _extractSingleTableData(tblElement) {
+                                 const tableData = {
+                                     id: generateId(),
+                                     type: 'table',
+                                     rows: [],
+                                     caption: null,
+                                     comments: []
+                                 };
+
+                                 const tblChildren = Array.from(tblElement.children);
+                                 tblChildren.forEach(child => {
+                                     const childName = child.nodeName;
+                                     if (childName === 'w:tblPr') {
+                                         // Propriétés du tableau (facultatif à extraire)
+                                     } else if (childName === 'w:tblGrid') {
+                                         // Grille du tableau (facultatif à extraire)
+                                     } else if (childName === 'w:tr') {
+                                         const rowData = { id: generateId(), cells: [] };
+                                         const cells = Array.from(child.getElementsByTagName('w:tc'));
+                                         cells.forEach(cell => {
+                                             const cellData = {
+                                                 id: generateId(),
+                                                 text: getParagraphText(cell),
+                                                 comments: [],
+                                                 colspan: 1,
+                                                 vMerge: null // 'restart', 'continue', ou null
+                                             };
+                                             const tcPr = cell.getElementsByTagName('w:tcPr')[0];
+                                             if (tcPr) {
+                                                 const vMergeEl = tcPr.getElementsByTagName('w:vMerge')[0];
+                                                 if (vMergeEl) {
+                                                     const val = vMergeEl.getAttribute('w:val');
+                                                     cellData.vMerge = val || 'continue'; // Si <w:vMerge/> sans val, c'est 'continue'
+                                                 }
+                                                 const gridSpanEl = tcPr.getElementsByTagName('w:gridSpan')[0];
+                                                 if (gridSpanEl) {
+                                                     const val = parseInt(gridSpanEl.getAttribute('w:val'), 10);
+                                                     if (!isNaN(val) && val > 1) {
+                                                         cellData.colspan = val;
+                                                     }
+                                                 }
+                                             }
+                                             rowData.cells.push(cellData);
+                                         });
+                                         tableData.rows.push(rowData);
+                                     }
+                                 });
+                                 return tableData;
+                             }
+
+
+                            elements.forEach((element, index) => {
+                                const elementName = element.nodeName;
+                                if (elementName === 'w:p') {
+                                    const paraText = getParagraphText(element);
+                                    const style = getParagraphStyle(element);
+                                    const levelMatch = style.match(/^Titre(\d+)$/i);
+                                    const level = levelMatch ? parseInt(levelMatch[1], 10) : null;
+
+                                    if (level === 1) {
+                                        console.log(`%c-> CHAPITRE (Niveau 1 - Style: ${style}) : ${paraText.substring(0, 50)}...`, 'color: blue;');
+                                        if (pendingContentBeforeFirstChapter.length > 0 && !currentChapter) {
+                                             const introChapter = {
+                                                 id: generateId(),
+                                                 title: "Contenu Initial (avant Titre1)",
+                                                 level: 1,
+                                                 style: "Titre1",
+                                                 content: pendingContentBeforeFirstChapter,
+                                                 sections: [],
+                                                 comments: []
+                                             };
+                                             reportData.chapters.unshift(introChapter);
+                                             pendingContentBeforeFirstChapter = [];
+                                        }
+                                        currentChapter = {
+                                            id: generateId(),
+                                            title: paraText,
+                                            level: 1,
+                                            style: style,
+                                            content: [],
+                                            sections: [],
+                                            comments: []
+                                        };
+                                        reportData.chapters.push(currentChapter);
+                                        currentSection = null;
+                                        currentSubsection = null;
+                                    } else if (level === 2 && currentChapter) {
+                                        console.log(`%c-> SECTION (Niveau 2 - Style: ${style}) sous [${currentChapter.title.substring(0,20)}]: ${paraText.substring(0, 50)}...`, 'color: green;');
+                                        currentSection = {
+                                            id: generateId(),
+                                            title: paraText,
+                                            level: 2,
+                                            style: style,
+                                            content: [],
+                                            subsections: [],
+                                            comments: []
+                                        };
+                                        currentChapter.sections.push(currentSection);
+                                        currentSubsection = null;
+                                    } else if (level === 3 && currentSection) {
+                                        console.log(`%c-> SOUS-SECTION (Niveau 3 - Style: ${style}) sous [${currentSection.title.substring(0,20)}]: ${paraText.substring(0, 40)}...`, 'color: orange;');
+                                        currentSubsection = {
+                                            id: generateId(),
+                                            title: paraText,
+                                            level: 3,
+                                            style: style,
+                                            content: [],
+                                            comments: []
+                                        };
+                                        currentSection.subsections.push(currentSubsection);
+                                    } else {
+                                        const paragraphData = {
+                                            id: generateId(),
+                                            type: 'paragraph',
+                                            text: paraText,
+                                            style: style,
+                                            comments: []
+                                        };
+                                        if (currentSubsection) {
+                                            currentSubsection.content.push(paragraphData);
+                                        } else if (currentSection) {
+                                            currentSection.content.push(paragraphData);
+                                        } else if (currentChapter) {
+                                            currentChapter.content.push(paragraphData);
+                                        } else {
+                                            pendingContentBeforeFirstChapter.push(paragraphData);
+                                        }
+                                    }
+                                } else if (elementName === 'w:tbl') {
+                                    console.log(`%cTableau détecté (index ${index}). Extraction...`, 'color: purple;');
+                                    const tableData = _extractSingleTableData(element);
+                                    if (tableData) {
+                                        if (currentSubsection) {
+                                            currentSubsection.content.push(tableData);
+                                        } else if (currentSection) {
+                                            currentSection.content.push(tableData);
+                                        } else if (currentChapter) {
+                                            currentChapter.content.push(tableData);
+                                        } else {
+                                            pendingContentBeforeFirstChapter.push(tableData);
+                                        }
+                                    } else {
+                                        console.warn(`Impossible d'extraire les données du tableau à l'index ${index}.`);
+                                    }
+                                }
+                            });
+
+                            if (pendingContentBeforeFirstChapter.length > 0 && reportData.chapters.length > 0) {
+                                 reportData.chapters[0].content.unshift(...pendingContentBeforeFirstChapter);
+                                 console.log("Contenu pré-Titre1 ajouté au début du premier chapitre.");
+                             } else if (pendingContentBeforeFirstChapter.length > 0 && reportData.chapters.length === 0) {
+                                 const introChapter = {
+                                     id: generateId(),
+                                     title: "Document",
+                                     level: 1,
+                                     style: "Titre1",
+                                     content: pendingContentBeforeFirstChapter,
+                                     sections: [],
+                                     comments: []
+                                 };
+                                 reportData.chapters.push(introChapter);
+                                 console.log("Chapitre par défaut créé pour contenu sans Titre1.");
+                             }
+
+                            console.log("Métadonnées finales:", reportData.metadata);
+                            console.log(`Nombre final de chapitres extraits: ${reportData.chapters?.length ?? 0}`);
+                            displayReport_enhanced();
+                        } catch (error) {
+                            console.error("Erreur pendant le traitement DOCX:", error);
+                            updateStatus(`Erreur traitement DOCX: ${error.message}`, true);
+                            clearReportDisplay();
+                        } finally {
+                            hideLoading();
+                        }
+                    };
+                    reader.onerror = (e) => {
+                        console.error("- FileReader ONERROR (DOCX) -", e.target.error);
+                        updateStatus(`Erreur de lecture du fichier DOCX: ${e.target.error?.message || 'Erreur inconnue'}`, true);
+                        hideLoading();
+                    };
+                    try {
+                        reader.readAsArrayBuffer(file);
+                    } catch (readError) {
+                        console.error("Erreur lors de l'appel de readAsArrayBuffer:", readError);
+                        updateStatus(`Erreur au démarrage de la lecture: ${readError.message}`, true);
+                        hideLoading();
+                    }
+                } else {
+                    updateStatus("Format de fichier invalide. Veuillez sélectionner un fichier .docx.", true);
+                    event.target.value = null;
+                }
+            } else {
+                console.log("handleDocxFileSelect: Aucun fichier sélectionné.");
+            }
+            if (event?.target) event.target.value = null;
+            console.log("- handleDocxFileSelect FIN -");
+        }
+
+        function handleJsonFileSelect(event) {
+            console.log("- handleJsonFileSelect DÉBUT -");
+            const file = event.target.files[0];
+            if (file) {
+                console.log(`Fichier JSON sélectionné: ${file.name}`);
+                if (file.name.toLowerCase().endsWith('.json')) {
+                    showLoading(`Chargement de ${file.name}...`);
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        console.log("- JSON FileReader ONLOAD -");
+                        loadJsonData(e.target.result, file.name);
+                    };
+                    reader.onerror = (e) => {
+                        console.error("- JSON FileReader ONERROR -", e.target.error);
+                        updateStatus(`Erreur de lecture du fichier JSON: ${e.target.error?.message || 'Inconnue'}`, true);
+                        hideLoading();
+                    };
+                    try {
+                        reader.readAsText(file);
+                    } catch (readError) {
+                        console.error("Erreur lors de l'appel de readAsText:", readError);
+                        updateStatus(`Erreur au démarrage de la lecture JSON: ${readError.message}`, true);
+                        hideLoading();
+                    }
+                } else {
+                    updateStatus("Format de fichier invalide. Veuillez sélectionner un fichier .json.", true);
+                    event.target.value = null;
+                }
+            } else {
+                console.log("handleJsonFileSelect: Aucun fichier sélectionné.");
+            }
+            if (event?.target) event.target.value = null;
+            console.log("- handleJsonFileSelect FIN -");
+        }
+
+        // --- Initialisation de l'Application ---
+        async function initializeApp() {
+            console.log("initializeApp: Démarrage...");
+            docxInput = document.getElementById('docx-input');
+            jsonInput = document.getElementById('json-input');
+            loadDocxBtn = document.getElementById('load-docx-btn');
+            loadJsonBtn = document.getElementById('load-json-btn');
+            saveJsonBtn = document.getElementById('save-json-btn');
+            toggleCommentsBtn = document.getElementById('toggle-comments-btn');
+            statusElement = document.getElementById('status');
+            loadingElement = document.getElementById('loading-indicator');
+            loadingMessageElement = document.getElementById('loading-message');
+            outputContainer = document.getElementById('report-output');
+            docInfoElement = document.getElementById('document-info');
+            docStructureElement = document.getElementById('document-structure');
+            sidebarNav = document.getElementById('sidebar-nav');
+            apiKeyInput = document.getElementById('api-key-input');
+            setApiKeyBtn = document.getElementById('set-api-key-btn');
+
+            if (!docxInput || !jsonInput || !loadDocxBtn || !loadJsonBtn || !saveJsonBtn ||
+                !toggleCommentsBtn || !statusElement || !loadingElement || !loadingMessageElement ||
+                !outputContainer || !docInfoElement || !docStructureElement || !sidebarNav ||
+                !apiKeyInput || !setApiKeyBtn) {
+                console.error("initializeApp: Impossible de trouver tous les éléments DOM requis.");
+                updateStatus("Erreur d'initialisation: éléments DOM manquants.", true);
+                return false;
+            }
+
+            // Charger la clé API depuis sessionStorage si elle existe
+            if (groqApiKey) {
+                apiKeyInput.value = '••••••••••••••••'; // Masquer la clé mais indiquer qu'elle est là
+                updateStatus("Clé API Groq chargée depuis la session.");
+            }
+
+            // Charger le modèle JSON local
+            try {
+                showLoading("Chargement du modèle JSON...");
+                const response = await fetch('F908-food-audit-report-template _ Micron2_ 31st Oct 2024_edited.json');
+                if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+                templateModelData = await response.json();
+                console.log("Modèle JSON chargé avec succès:", templateModelData);
+                updateStatus("Modèle JSON chargé. Prêt.");
+            } catch (error) {
+                console.error("Erreur lors du chargement du modèle JSON:", error);
+                updateStatus(`Erreur chargement modèle: ${error.message}. L'IA pourrait ne pas fonctionner correctement.`, true);
+                // On continue l'init même si le modèle échoue
+            } finally {
+                 hideLoading(); // Masquer le loading une fois le modèle chargé ou en erreur
+            }
+
+
+            loadDocxBtn.addEventListener('click', () => { console.log(">>> Clic sur Charger DOCX"); docxInput.click(); });
+            loadJsonBtn.addEventListener('click', () => { console.log(">>> Clic sur Charger JSON"); jsonInput.click(); });
+            saveJsonBtn.addEventListener('click', handleSaveJson);
+            toggleCommentsBtn.addEventListener('click', handleToggleComments);
+            docxInput.addEventListener('change', handleDocxFileSelect);
+            jsonInput.addEventListener('change', handleJsonFileSelect);
+
+            setApiKeyBtn.addEventListener('click', () => {
+                 const key = apiKeyInput.value.trim();
+                 if (key) {
+                     groqApiKey = key;
+                     sessionStorage.setItem('groqApiKey', key); // Stocker dans sessionStorage
+                     apiKeyInput.value = '••••••••••••••••'; // Masquer après sauvegarde
+                     updateStatus("Clé API Groq définie et sauvegardée pour la session.");
+                 } else {
+                     groqApiKey = '';
+                     sessionStorage.removeItem('groqApiKey');
+                     apiKeyInput.placeholder = "Entrez votre clé API Groq";
+                     updateStatus("Clé API Groq effacée de la session.");
+                 }
+             });
+
+            console.log("initializeApp: Écouteurs configurés.");
+            // Ne pas mettre à jour le statut ici, la fonction hideLoading du modèle le fera
+            // updateStatus("Prêt. Chargez un fichier DOCX ou JSON.");
+
+            saveJsonBtn.disabled = true;
+            toggleCommentsBtn.disabled = true;
+            return true;
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM entièrement chargé et parsé. Initialisation de l'application...");
+            initializeApp();
+        });
+        console.log("Script initial parsé. Attente de l'événement DOMContentLoaded.");
+    </script>
+</body>
+</html>
