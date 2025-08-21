@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Éditeur de Rapport DOCX (Version Corrigée et Complète)</title>
+    <!-- Include JSZip library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        /* --- Général --- */
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 20px auto;
+            background: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+            flex-grow: 1;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+
+        /* --- Menu --- */
+        nav.menu-bar {
+            background-color: #34495e;
+            padding: 10px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap; /* Permet aux boutons de passer à la ligne si pas assez de place */
+        }
+        nav.menu-bar button {
+            background-color: #ecf0f1;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            color: #34495e;
+            transition: background-color 0.3s ease;
+            font-size: 0.9em; /* Taille de police cohérente */
+        }
+        nav.menu-bar button:hover:not(:disabled) {
+            background-color: #bdc3c7;
+        }
+        nav.menu-bar button:disabled {
+            background-color: #dde; /* Légèrement différent pour le distinguer */
+            color: #999; /* Texte grisé */
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        nav.menu-bar .status {
+            margin-left: auto; /* Pousse le statut à droite */
+            color: #ecf0f1;
+            font-style: italic;
+            font-size: 0.9em;
+            text-align: right; /* S'assure qu'il reste à droite si le texte est long */
+            flex-grow: 1; /* Prend l'espace restant */
+            padding-left: 15px; /* Espace par rapport au dernier bouton */
+        }
+
+        /* --- Input Caché --- */
+        .hidden-input { display: none; }
+
+        /* --- Chargement --- */
+        #loading {
+            display: none; /* Caché par défaut */
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+            font-size: 1.2em;
+            color: #3498db;
+            text-align: center;
+            background-color: rgba(255, 255, 255, 0.8); /* Fond semi-transparent */
+            position: fixed; /* Pour être au-dessus du contenu */
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1000; /* Pour être au premier plan */
+        }
+        #loading .spinner { /* Style du spinner directement */
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin-right: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* --- Contenu du Rapport --- */
+        #report-output {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fdfdfd;
+            display: none; /* Caché initialement */
+        }
+        #document-info {
+            background-color: #eaf2f8;
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #283747;
+            border: 1px solid #d6eaf8;
+        }
+        #document-info p { margin: 5px 0; }
+
+        /* --- Structure & Titres --- */
+        .report-element {
+            position: relative; /* Pour positionner le bouton commentaire */
+            margin-bottom: 15px; /* Espace entre éléments de structure */
+            padding-left: 10px; /* Léger retrait */
+            border-left: 3px solid transparent; /* Pour alignement visuel */
+        }
+        .report-element > h2, /* Ciblage plus précis */
+        .report-element > h3,
+        .report-element > h4 {
+            margin-top: 15px;
+            margin-bottom: 5px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid #eee;
+            font-weight: bold;
+            position: relative; /* Pour le bouton commentaire */
+        }
+        .chapter-title { font-size: 1.6em; color: #1a5276; border-bottom-width: 2px; border-color: #aed6f1; }
+        .section-title { font-size: 1.3em; color: #2471a3; }
+        .subsection-title { font-size: 1.15em; color: #5499c7; }
+
+        /* --- Paragraphes & Édition --- */
+        .content-paragraph-container {
+            margin-bottom: 8px;
+            padding: 0;
+            border-left: 3px solid #e0e0e0;
+            margin-left: 10px; /* Cohérent avec .report-element */
+            position: relative; /* Pour le bouton commentaire */
+        }
+        .content-paragraph {
+            padding: 5px 8px; /* Ajout padding horizontal */
+            margin: 0;
+            min-height: 1.2em; /* Hauteur minimale */
+        }
+        .content-paragraph[contenteditable="true"] {
+            border: 1px dashed #a9cce3;
+            padding: 4px 6px; /* Ajustement pour la bordure */
+            cursor: text;
+            background-color: #f8fcff;
+            display: block; /* S'assurer qu'il prend la largeur */
+            /* width: calc(100% - 12px); /* Non nécessaire si display: block */
+        }
+        .content-paragraph[contenteditable="true"]:focus {
+            outline: 2px solid #3498db;
+            background-color: #eaf2f8;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+        }
+
+        /* --- Tableaux --- */
+         .report-table-container {
+            overflow-x: auto; /* Permet le défilement horizontal si nécessaire */
+            margin: 15px 0;
+            position: relative; /* Pour le bouton commentaire */
+            padding: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            background: #fafafa;
+         }
+        .report-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 5px;
+        }
+        .report-table caption {
+            caption-side: top;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-align: left;
+            color: #333;
+            font-size: 1.1em;
+            padding: 5px;
+            position: relative; /* Pour le bouton commentaire */
+        }
+        .report-table th, .report-table td {
+            border: 1px solid #ccc;
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: top;
+            position: relative; /* Pour le bouton commentaire */
+        }
+        .report-table th {
+            background-color: #e9ecef;
+            font-weight: bold;
+            color: #495057;
+        }
+        /* Style pour les cellules éditables */
+        .report-table td[contenteditable="true"] {
+            background-color: #f8fcff;
+            border: 1px dashed #a9cce3;
+        }
+        .report-table td[contenteditable="true"]:focus {
+            outline: 2px solid #3498db;
+            background-color: #eaf2f8;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+        }
+        /* Style pour les cellules fusionnées verticalement (facultatif) */
+        .report-table td.vmerged {
+            /* background-color: #f0f0f0; /* Exemple */
+        }
+
+        /* --- Commentaires --- */
+        .comment-section {
+            margin-top: 8px; /* Espace par rapport à l'élément parent */
+            padding-left: 10px;
+            border-left: 2px dashed #f1c40f;
+            background-color: #fef9e7;
+            padding: 8px 12px; /* Plus d'espace interne */
+            border-radius: 4px;
+            font-size: 0.9em;
+            display: none; /* Caché par défaut */
+        }
+        .comment-section.visible { display: block; } /* Affiché si classe 'visible' */
+
+        .comment {
+            border-bottom: 1px solid #fdebd0;
+            padding: 5px 0; /* Espacement vertical */
+            margin-bottom: 5px;
+        }
+        .comment:last-child { border-bottom: none; margin-bottom: 0; }
+
+        .add-comment-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.1em; /* Légèrement plus grand */
+            color: #f39c12;
+            margin-left: 8px;
+            vertical-align: middle;
+            display: none; /* Caché par défaut */
+            padding: 0 3px;
+            opacity: 0.6; /* Moins visible initialement */
+            transition: opacity 0.2s;
+            position: absolute; /* Position absolue par rapport au parent relatif */
+            right: 5px;
+            top: 50%; /* Centrage vertical approximatif */
+            transform: translateY(-50%); /* Ajustement fin du centrage */
+        }
+        /* Ajustement pour les titres */
+        .report-element > h2 .add-comment-btn,
+        .report-element > h3 .add-comment-btn,
+        .report-element > h4 .add-comment-btn {
+            top: 50%; /* Conserve le centrage vertical */
+            right: 8px; /* Un peu plus d'espace */
+        }
+        /* Ajustement pour les cellules de tableau */
+        .report-table td .add-comment-btn {
+             top: 4px; /* Ajusté pour l'intérieur de la cellule */
+             right: 4px;
+             transform: none; /* Pas besoin de centrage vertical complexe ici */
+        }
+        /* Ajustement pour les conteneurs de paragraphe */
+        .content-paragraph-container .add-comment-btn {
+            top: 4px; /* Ajusté pour le conteneur */
+            right: 4px;
+            transform: none;
+        }
+        /* Bouton pour la légende du tableau */
+        .report-table caption .add-comment-btn {
+            position: relative; /* Relatif au flux normal */
+            top: 0; right: 0; transform: none; /* Reset positionnement absolu */
+            margin-left: 10px;
+            display: inline-block; /* Affiché inline */
+            vertical-align: baseline; /* Alignement avec le texte */
+        }
+        /* Affichage au survol ou si visible */
+        .report-element:hover .add-comment-btn,
+        .content-paragraph-container:hover .add-comment-btn,
+        .report-table td:hover .add-comment-btn,
+        .report-table caption:hover .add-comment-btn {
+            opacity: 1;
+        }
+        .add-comment-btn.visible { /* Reste visible si les commentaires sont actifs */
+            display: inline-block; /* Ou 'block' selon le contexte */
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Éditeur de Rapport DOCX (Version Corrigée et Complète)</h1>
+
+        <!-- Inputs cachés pour la sélection de fichiers -->
+        <input type="file" id="docx-input" class="hidden-input" accept=".docx">
+        <input type="file" id="json-input" class="hidden-input" accept=".json">
+
+        <!-- Barre de menu -->
+        <nav class="menu-bar">
+            <button id="load-docx-btn">Charger DOCX</button>
+            <button id="load-json-btn">Charger JSON</button>
+            <button id="save-json-btn" disabled>Sauvegarder JSON</button>
+            <button id="toggle-comments-btn" disabled>Afficher Commentaires</button>
+            <span class="status" id="status">Initialisation...</span>
+        </nav>
+
+        <!-- Indicateur de chargement -->
+        <div id="loading">
+            <div class="spinner"></div>
+            <span id="loading-message">Traitement en cours...</span>
+        </div>
+
+        <!-- Zone d'affichage du rapport -->
+        <div id="report-output">
+             <h2>Contenu du Rapport</h2>
+             <div id="document-info"></div>
+             <div id="document-structure">
+                 <!-- La structure (chapitres, sections, etc.) sera injectée ici -->
+             </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Variables Globales ---
+        let reportData = null;       // Stocke la structure JSON du rapport
+        let idCounter = 0;           // Compteur pour générer des IDs uniques
+        let commentsVisible = false; // État d'affichage des commentaires
+
+        // --- Références aux Éléments DOM ---
+        // Initialisées dans initializeApp() pour s'assurer que le DOM est prêt
+        let docxInput, jsonInput, loadDocxBtn, loadJsonBtn, saveJsonBtn, toggleCommentsBtn,
+            statusElement, loadingElement, loadingMessageElement, outputContainer,
+            docInfoElement, docStructureElement;
+
+        // --- Fonctions Utilitaires ---
+
+        /** Génère un ID unique pour les éléments du rapport. */
+        function generateId() {
+            return `elem-${idCounter++}`;
+        }
+
+        /** Affiche l'indicateur de chargement avec un message. */
+        function showLoading(message) {
+             console.log("[Util] Affichage Chargement:", message);
+             if (statusElement) statusElement.textContent = message;
+             else console.error("showLoading: statusElement non trouvé.");
+
+             if(loadingMessageElement) loadingMessageElement.textContent = message;
+             else console.error("showLoading: loadingMessageElement non trouvé.");
+
+             if (loadingElement) loadingElement.style.display = 'flex';
+             else console.error("showLoading: loadingElement non trouvé.");
+
+             if (outputContainer) outputContainer.style.display = 'none';
+             else console.error("showLoading: outputContainer non trouvé.");
+        }
+
+        /** Masque l'indicateur de chargement et met à jour l'état des boutons/affichage. */
+        function hideLoading() {
+             console.log("[Util] Masquage Chargement - DÉBUT");
+             if (!loadingElement || !outputContainer || !saveJsonBtn || !toggleCommentsBtn) {
+                  console.error("hideLoading: Éléments DOM essentiels non prêts.");
+                  // Essayer de masquer le chargement même si tout n'est pas prêt
+                  if(loadingElement) loadingElement.style.display = 'none';
+                  return;
+             }
+             loadingElement.style.display = 'none';
+
+             const reportDataExists = !!reportData && typeof reportData === 'object';
+             console.log(`[Util] Masquage Chargement - reportDataExists: ${reportDataExists}`);
+
+             // Activer/désactiver les boutons en fonction de la présence de données
+             saveJsonBtn.disabled = !reportDataExists;
+             toggleCommentsBtn.disabled = !reportDataExists;
+
+             // Afficher le conteneur de sortie seulement si des données existent
+             outputContainer.style.display = reportDataExists ? 'block' : 'none';
+
+             if(reportDataExists && (!reportData.chapters || reportData.chapters.length === 0)) {
+                 console.warn("[Util] Masquage Chargement - Aucune donnée de chapitre détectée, mais reportData existe.");
+                 if(docStructureElement) docStructureElement.innerHTML = '<p><strong>Avertissement :</strong> Aucune structure de chapitre (basée sur les styles Titre1, Titre2, Titre3) n\'a été détectée. Le contenu pourrait être entièrement non structuré ou les styles de titres attendus sont absents ou différents.</p>';
+             } else if (reportDataExists) {
+                 console.log("[Util] Masquage Chargement - Données de chapitre trouvées, conteneur de sortie affiché.");
+             } else {
+                 console.log("[Util] Masquage Chargement - Pas de reportData, conteneur de sortie masqué.");
+             }
+
+             // Mettre à jour le statut si des données ont été chargées
+             if (statusElement && reportDataExists) {
+                 const source = reportData.metadata?.source === 'json' ? 'JSON' : 'DOCX';
+                 updateStatus(`Fichier ${source} chargé. Prêt pour édition ou sauvegarde.`);
+             } else if (statusElement && !reportDataExists && statusElement.textContent.startsWith('Chargement')) {
+                 // Si le chargement se termine sans données, indiquer un état prêt mais vide
+                 updateStatus("Prêt. Chargez un fichier DOCX ou JSON.", false);
+             }
+
+             console.log("[Util] Masquage Chargement - FIN");
+        }
+
+        /** Met à jour le message de statut dans la barre de menu. */
+        function updateStatus(message, isError = false) {
+             console.log(`[Util] Statut (${isError ? 'Erreur' : 'Info'}): ${message}`);
+             if (statusElement) {
+                 statusElement.textContent = message;
+                 statusElement.style.color = isError ? '#e74c3c' : '#ecf0f1'; // Rouge pour erreur, blanc sinon
+                 statusElement.style.fontWeight = isError ? 'bold' : 'normal';
+             } else {
+                 console.error("updateStatus: statusElement non trouvé.");
+             }
+        }
+
+        /** Efface l'affichage du rapport et réinitialise les données. */
+        function clearReportDisplay() {
+             console.log("[Util] Effacement de l'affichage du rapport");
+             if (docInfoElement) docInfoElement.innerHTML = '';
+             else console.error("clearReportDisplay: docInfoElement non trouvé.");
+
+             if (docStructureElement) docStructureElement.innerHTML = '';
+             else console.error("clearReportDisplay: docStructureElement non trouvé.");
+
+             reportData = null; // Réinitialise les données
+             idCounter = 0; // Réinitialise le compteur d'ID
+             commentsVisible = false; // Réinitialise la visibilité des commentaires
+
+             if (outputContainer) outputContainer.style.display = 'none';
+             else console.error("clearReportDisplay: outputContainer non trouvé.");
+
+             // Désactiver les boutons dépendant des données
+             if (saveJsonBtn) saveJsonBtn.disabled = true;
+             else console.error("clearReportDisplay: saveJsonBtn non trouvé.");
+             if (toggleCommentsBtn) {
+                 toggleCommentsBtn.disabled = true;
+                 toggleCommentsBtn.textContent = 'Afficher Commentaires'; // Texte par défaut
+             } else console.error("clearReportDisplay: toggleCommentsBtn non trouvé.");
+        }
+
+        /** Trouve un élément dans la structure reportData par son ID (recherche récursive). */
+        function findElementById(id, node = reportData) {
+             if (!node || typeof node !== 'object') return null;
+             if (node.id === id) return node;
+
+             // Clés potentielles contenant des tableaux d'objets avec des IDs
+             const keysToSearch = ['chapters', 'sections', 'subsections', 'content', 'rows', 'cells', 'comments'];
+
+             for (const key of keysToSearch) {
+                 if (node[key] && Array.isArray(node[key])) {
+                     for (const child of node[key]) {
+                         // Vérifier si l'enfant est un objet et a un ID avant de récursionner
+                         if (typeof child === 'object' && child !== null && child.id) {
+                            const found = findElementById(id, child);
+                            if (found) return found; // Retourner dès qu'on trouve
+                         }
+                     }
+                 }
+             }
+             return null; // Non trouvé dans cette branche
+        }
+
+
+        // --- Initialisation de l'Application ---
+        /** Récupère les éléments DOM et attache les écouteurs d'événements. */
+        function initializeApp() {
+            console.log("initializeApp: Récupération des éléments DOM...");
+            docxInput = document.getElementById('docx-input');
+            jsonInput = document.getElementById('json-input');
+            loadDocxBtn = document.getElementById('load-docx-btn');
+            loadJsonBtn = document.getElementById('load-json-btn');
+            saveJsonBtn = document.getElementById('save-json-btn');
+            toggleCommentsBtn = document.getElementById('toggle-comments-btn');
+            statusElement = document.getElementById('status');
+            loadingElement = document.getElementById('loading');
+            loadingMessageElement = document.getElementById('loading-message'); // Ajouté
+            outputContainer = document.getElementById('report-output');
+            docInfoElement = document.getElementById('document-info');
+            docStructureElement = document.getElementById('document-structure');
+
+            const requiredElements = {
+                docxInput, jsonInput, loadDocxBtn, loadJsonBtn, saveJsonBtn, toggleCommentsBtn,
+                statusElement, loadingElement, loadingMessageElement, outputContainer, docInfoElement, docStructureElement
+            };
+
+            let allFound = true;
+            for (const key in requiredElements) {
+                 if (!requiredElements[key]) {
+                      // Génère l'ID attendu à partir du nom de la variable pour le message d'erreur
+                      const expectedId = key.replace(/([A-Z])/g, '-$1').toLowerCase()
+                                            .replace(/-element$/, '') // Pour statusElement, etc.
+                                            .replace(/-btn$/, '-btn');   // Pour les boutons
+                      console.error(`initializeApp: ERREUR CRITIQUE - Élément avec l'ID '${expectedId}' INTROUVABLE !`);
+                      allFound = false;
+                 }
+            }
+
+            if (!allFound) {
+                const errorMsg = "Erreur Critique: Impossible de trouver tous les éléments HTML nécessaires à l'application. Vérifiez la console (F12) pour les détails des IDs manquants.";
+                alert(errorMsg);
+                if (statusElement) updateStatus("ERREUR D'INITIALISATION", true);
+                // Optionnel : désactiver tous les boutons si l'init échoue
+                if (loadDocxBtn) loadDocxBtn.disabled = true;
+                if (loadJsonBtn) loadJsonBtn.disabled = true;
+                return false; // Arrêter l'initialisation
+            }
+
+            console.log("initializeApp: Éléments DOM trouvés. Configuration des écouteurs...");
+            // Attachement des écouteurs d'événements
+            loadDocxBtn.addEventListener('click', () => { console.log(">>> Clic sur Charger DOCX"); docxInput.click(); });
+            loadJsonBtn.addEventListener('click', () => { console.log(">>> Clic sur Charger JSON"); jsonInput.click(); });
+            saveJsonBtn.addEventListener('click', handleSaveJson);
+            toggleCommentsBtn.addEventListener('click', handleToggleComments);
+            docxInput.addEventListener('change', handleDocxFileSelect);
+            jsonInput.addEventListener('change', handleJsonFileSelect);
+
+            console.log("initializeApp: Écouteurs configurés.");
+            updateStatus("Prêt. Chargez un fichier DOCX ou JSON.");
+            // Assurer l'état initial des boutons désactivés
+            saveJsonBtn.disabled = true;
+            toggleCommentsBtn.disabled = true;
+            return true; // Initialisation réussie
+        }
+
+
+        // --- Gestion des Fichiers ---
+
+        /** Gère la sélection d'un fichier DOCX. */
+        function handleDocxFileSelect(event) {
+            console.log(">>> Événement 'change' sur l'input DOCX");
+            const file = event.target.files[0];
+            if (file) {
+                console.log(`Fichier sélectionné : ${file.name}, Taille: ${file.size}, Type: ${file.type}`);
+                if (file.name.toLowerCase().endsWith('.docx')) {
+                    showLoading(`Chargement de ${file.name}...`);
+                    const reader = new FileReader();
+                    console.log("FileReader créé. Configuration onload/onerror...");
+                    reader.onload = (e) => {
+                        console.log("--- FileReader ONLOAD (DOCX) ---");
+                         try {
+                             // Lancer le traitement asynchrone du DOCX
+                             processDocx(e.target.result, file.name);
+                         }
+                         catch (processError) {
+                             // Attrape les erreurs synchrones rares au DÉMARRAGE de processDocx
+                             console.error("Erreur *synchrone* pendant l'appel de processDocx :", processError);
+                             updateStatus(`Erreur interne (traitement DOCX): ${processError.message}`, true);
+                             hideLoading();
+                         }
+                    };
+                    reader.onerror = (e) => {
+                        console.error("--- FileReader ONERROR (DOCX) ---", e.target.error);
+                        updateStatus(`Erreur de lecture du fichier DOCX: ${e.target.error?.message || 'Erreur inconnue'}`, true);
+                        hideLoading();
+                    };
+                    try {
+                         console.log("Appel de reader.readAsArrayBuffer...");
+                         reader.readAsArrayBuffer(file); // Lire comme ArrayBuffer pour JSZip
+                         console.log("readAsArrayBuffer appelé.");
+                    } catch (readError) {
+                         console.error("Erreur lors de l'appel de readAsArrayBuffer:", readError);
+                         updateStatus(`Erreur au démarrage de la lecture: ${readError.message}`, true);
+                         hideLoading();
+                    }
+                } else {
+                    updateStatus("Format de fichier invalide. Veuillez sélectionner un fichier .docx.", true);
+                    event.target.value = null; // Réinitialiser l'input
+                }
+            } else {
+                console.log("handleDocxFileSelect: Aucun fichier sélectionné.");
+                // Ne pas changer le statut si aucun fichier n'est choisi (annulation)
+            }
+            // Toujours réinitialiser l'input pour permettre de re-sélectionner le même fichier
+            if (event?.target) event.target.value = null;
+            console.log("--- handleDocxFileSelect FIN ---");
+        }
+
+        /** Gère la sélection d'un fichier JSON. */
+        function handleJsonFileSelect(event) {
+            console.log("--- handleJsonFileSelect DÉBUT ---");
+            const file = event.target.files[0];
+            if (file) {
+                console.log(`Fichier JSON sélectionné: ${file.name}`);
+                if (file.name.toLowerCase().endsWith('.json')) {
+                     showLoading(`Chargement de ${file.name}...`);
+                     const reader = new FileReader();
+                     reader.onload = (e) => {
+                         console.log("--- JSON FileReader ONLOAD ---");
+                         // Traiter le contenu JSON chargé
+                         loadJsonData(e.target.result, file.name); // Passer le nom du fichier aussi
+                     };
+                     reader.onerror = (e) => {
+                         console.error("--- JSON FileReader ONERROR ---", e.target.error);
+                         updateStatus(`Erreur de lecture du fichier JSON: ${e.target.error?.message || 'Inconnue'}`, true);
+                         hideLoading();
+                     };
+                      try {
+                          console.log("Appel de JSON reader.readAsText...");
+                          reader.readAsText(file); // Lire comme texte pour JSON.parse
+                          console.log("readAsText appelé.");
+                      }
+                      catch (readError) {
+                          console.error("Erreur lors de l'appel de readAsText:", readError);
+                          updateStatus(`Erreur au démarrage de la lecture JSON: ${readError.message}`, true);
+                          hideLoading();
+                      }
+                } else {
+                     updateStatus("Format de fichier invalide. Veuillez sélectionner un fichier .json.", true);
+                     event.target.value = null; // Réinitialiser l'input
+                }
+            } else {
+                console.log("handleJsonFileSelect: Aucun fichier sélectionné.");
+            }
+            // Toujours réinitialiser l'input
+            if (event?.target) event.target.value = null;
+            console.log("--- handleJsonFileSelect FIN ---");
+        }
+
+        /** Sauvegarde la structure actuelle (reportData) dans un fichier JSON. */
+        function handleSaveJson() {
+            console.log("--- handleSaveJson DÉBUT ---");
+            if (!reportData) {
+                updateStatus("Aucune donnée à sauvegarder.", true);
+                return;
+            }
+            try {
+                // S'assurer que les métadonnées existent
+                reportData.metadata = reportData.metadata || {};
+                // Sauvegarder le dernier ID utilisé et l'état des commentaires
+                reportData.metadata.lastId = idCounter;
+                reportData.metadata.commentsVisible = commentsVisible;
+                reportData.metadata.savedTimestamp = new Date().toISOString();
+
+                // Convertir l'objet reportData en chaîne JSON formatée
+                const jsonString = JSON.stringify(reportData, null, 2); // null, 2 pour indentation lisible
+
+                // Créer un Blob (Binary Large Object) avec le JSON
+                const blob = new Blob([jsonString], { type: 'application/json' });
+
+                // Créer une URL temporaire pour le Blob
+                const url = URL.createObjectURL(blob);
+
+                // Créer un lien de téléchargement invisible
+                const a = document.createElement('a');
+                a.href = url;
+
+                // Déterminer le nom du fichier de sauvegarde
+                const originalFilename = reportData.metadata.originalFilename || 'report';
+                const filename = originalFilename.replace(/\.(docx|json)$/i, '') + '_edited.json';
+                a.download = filename; // Nom du fichier proposé au téléchargement
+
+                // Ajouter le lien au document, le cliquer, puis le retirer
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                // Libérer l'URL de l'objet
+                URL.revokeObjectURL(url);
+
+                updateStatus(`Données sauvegardées dans ${filename}.`);
+
+            } catch (error) {
+                updateStatus(`Erreur lors de la sauvegarde JSON: ${error.message}`, true);
+                console.error("Erreur d'exportation JSON:", error);
+            }
+            console.log("--- handleSaveJson FIN ---");
+        }
+
+        /** Charge et affiche les données depuis une chaîne JSON. */
+        function loadJsonData(jsonString, sourceFilename = 'données JSON') {
+              console.log("--- loadJsonData DÉBUT ---");
+              try {
+                  clearReportDisplay(); // Effacer l'affichage précédent
+                  const parsedData = JSON.parse(jsonString);
+
+                  // Validation basique de la structure attendue
+                  if (typeof parsedData !== 'object' || parsedData === null || (!parsedData.chapters && !parsedData.metadata)) {
+                      // On vérifie au moins la présence de 'chapters' ou 'metadata' comme indicateur
+                      throw new Error("Le fichier JSON ne semble pas contenir une structure de rapport valide (manque 'chapters' ou 'metadata').");
+                  }
+
+                  reportData = parsedData; // Assigner les données parsées
+
+                  // Restaurer l'état depuis les métadonnées si présentes
+                  idCounter = reportData.metadata?.lastId || (findMaxId(reportData) + 1) || 0; // Tenter de recalculer si lastId manque
+                  commentsVisible = reportData.metadata?.commentsVisible || false;
+                  reportData.metadata = reportData.metadata || {}; // S'assurer que metadata existe
+                  reportData.metadata.source = 'json'; // Indiquer la source
+                  reportData.metadata.originalFilename = sourceFilename; // Garder le nom du fichier JSON
+
+                  console.log("Données JSON chargées. Métadonnées:", reportData.metadata);
+                  console.log("Compteur d'ID restauré à:", idCounter);
+
+                  // Afficher le rapport à partir des données chargées
+                  displayReport_enhanced();
+
+                  updateStatus(`Données chargées depuis ${sourceFilename}.`);
+
+              } catch (error) {
+                  updateStatus(`Erreur lors du chargement/parsing JSON: ${error.message}`, true);
+                  console.error("Erreur de chargement JSON:", error);
+                  clearReportDisplay(); // Nettoyer en cas d'erreur
+              } finally {
+                  // S'assurer que le chargement est masqué et les boutons mis à jour
+                  // Note: hideLoading() est appelé ici et mettra à jour le statut final si succès.
+                  hideLoading();
+              }
+              console.log("--- loadJsonData FIN ---");
+        }
+
+        /** Helper pour trouver le max ID dans les données chargées (si lastId manque) */
+        function findMaxId(node) {
+            let maxIdNum = -1;
+            if (!node || typeof node !== 'object') return maxIdNum;
+
+            if (node.id && typeof node.id === 'string' && node.id.startsWith('elem-')) {
+                const num = parseInt(node.id.split('-')[1], 10);
+                if (!isNaN(num)) {
+                    maxIdNum = Math.max(maxIdNum, num);
+                }
+            }
+
+            const keysToSearch = ['chapters', 'sections', 'subsections', 'content', 'rows', 'cells', 'comments'];
+            for (const key of keysToSearch) {
+                if (node[key] && Array.isArray(node[key])) {
+                    for (const child of node[key]) {
+                        maxIdNum = Math.max(maxIdNum, findMaxId(child));
+                    }
+                }
+            }
+            return maxIdNum;
+        }
+
+        // --- Traitement DOCX ---
+
+        /** Traite le contenu d'un fichier DOCX (ArrayBuffer). */
+        function processDocx(arrayBuffer, originalFilename) {
+             console.log("--- processDocx DÉBUT ---");
+             try {
+                 // Utiliser JSZip pour ouvrir le fichier DOCX (qui est une archive zip)
+                 JSZip.loadAsync(arrayBuffer)
+                     .then(zip => {
+                         console.log("Étape 1: Fichier DOCX chargé par JSZip.");
+                         // Trouver le fichier principal du document (généralement word/document.xml)
+                         // Utilisation d'une regex pour couvrir les variations possibles (comme document2.xml)
+                         const docFile = zip.file(/word\/document.*\.xml$/i);
+                         if (!docFile || docFile.length === 0) {
+                             throw new Error("Impossible de trouver le fichier 'word/document*.xml' dans l'archive DOCX.");
+                         }
+                         console.log("Étape 2: Fichier document trouvé:", docFile[0].name);
+                         // Lire le contenu du fichier XML comme texte
+                         return docFile[0].async("string");
+                     })
+                     .then(xmlString => {
+                         console.log("Étape 3: Contenu XML du document récupéré.");
+                         // Parser la chaîne XML en un objet Document XML
+                         console.log("Étape 4: Parsing du XML...");
+                         const parser = new DOMParser();
+                         const xmlDoc = parser.parseFromString(xmlString, "application/xml");
+
+                         // Vérifier les erreurs de parsing XML
+                         const parserError = xmlDoc.getElementsByTagName("parsererror");
+                         if (parserError.length > 0) {
+                            console.error("Erreur de parsing XML:", parserError[0].textContent);
+                            throw new Error("Erreur lors du parsing du XML du document.");
+                         }
+                         console.log("Étape 5: XML Parsé avec succès.");
+
+                         // Initialiser la structure de données du rapport
+                         clearReportDisplay(); // Nettoyer avant de remplir
+                         reportData = {
+                             metadata: {
+                                 originalFilename: originalFilename,
+                                 source: 'docx',
+                                 processingTimestamp: new Date().toISOString(),
+                                 info: {} // Sera rempli par extractInfo
+                             },
+                             chapters: [] // Sera rempli par extractStructure
+                         };
+                         idCounter = 0; // Réinitialiser le compteur d'ID pour ce nouveau document
+                         commentsVisible = false; // Réinitialiser la visibilité des commentaires
+
+                         console.log("Étape 6: Initialisation de reportData. Démarrage de l'extraction...");
+
+                         // Extraire les informations de base (comptes, styles)
+                         extractInfo_enhanced(xmlDoc); // Doit remplir reportData.metadata.info
+
+                         // Extraire la structure (chapitres, sections, contenu) et les tableaux
+                         extractStructureAndTables_enhanced(xmlDoc); // Doit remplir reportData.chapters
+
+                         console.log("Étape 7: Extraction terminée.");
+                         console.log("Métadonnées finales:", reportData.metadata);
+                         console.log(`Nombre final de chapitres extraits: ${reportData.chapters?.length ?? 0}`);
+
+                         console.log("Étape 8: Appel de displayReport_enhanced pour l'affichage...");
+                         displayReport_enhanced(); // Afficher le rapport extrait
+                         console.log("Étape 9: displayReport_enhanced terminé.");
+
+                         // Mettre à jour le statut final (sera géré par hideLoading)
+                         // updateStatus("Fichier DOCX traité et affiché avec succès."); // Sera fait par hideLoading
+                     })
+                     .catch(error => {
+                         // Gérer les erreurs survenues dans la chaîne de promesses (JSZip, XML parsing, extraction)
+                         console.error("Erreur pendant le traitement DOCX:", error);
+                         updateStatus(`Erreur traitement DOCX: ${error.message}`, true);
+                         clearReportDisplay(); // Nettoyer en cas d'erreur
+                     })
+                     .finally(() => {
+                         // Ce bloc s'exécute toujours, que la promesse réussisse ou échoue
+                         console.log("Étape Finale: Fin du traitement asynchrone. Appel de hideLoading.");
+                         hideLoading(); // Masquer l'indicateur de chargement et mettre à jour l'UI
+                     });
+             } catch (syncError) {
+                 // Attrape les erreurs synchrones très rares AVANT l'appel de JSZip.loadAsync
+                 console.error("Erreur synchrone *avant* le traitement JSZip:", syncError);
+                 updateStatus(`Erreur interne (initialisation traitement): ${syncError.message}`, true);
+                 hideLoading(); // S'assurer de masquer le chargement
+             }
+             console.log("--- processDocx FIN (lancement du traitement asynchrone) ---");
+        }
+
+
+        // --- Fonctions d'Extraction XML (Logique TitreX) ---
+
+        /** Extrait le texte contenu dans un élément <w:p> ou <w:tc>, en ignorant le texte des champs. */
+        function getParagraphText(element) {
+            if (!element) return '';
+            const textNodes = element.getElementsByTagName('w:t'); // Récupère tous les <w:t> descendants
+            let text = '';
+            let insideInstrText = false; // Flag pour suivre si on est dans un <w:instrText>
+
+            // Itérer sur tous les nœuds à l'intérieur de l'élément pour détecter les limites des champs
+            function traverseNodes(node) {
+                if (node.nodeName === 'w:instrText') {
+                    insideInstrText = true; // On entre dans une zone à ignorer
+                } else if (node.nodeName === 'w:t' && !insideInstrText) {
+                    // Ajouter le texte seulement si ce n'est pas un texte d'instruction
+                    text += node.textContent;
+                } else if (node.nodeName === 'w:fldChar' && node.getAttribute('w:fldCharType') === 'end') {
+                    // La fin d'un champ peut signifier la fin de instrText implicitement aussi
+                    insideInstrText = false;
+                } else if (node.nodeName === 'w:br') { // Gérer les sauts de ligne manuels
+                     text += '\n';
+                } else if (node.nodeName === 'w:tab') { // Gérer les tabulations
+                     text += '\t';
+                }
+
+
+                // Si le nœud est une fin de <w:instrText>, on peut sortir
+                if (node.nodeName === 'w:instrText' && node.nextSibling === null) {
+                    // Ce cas est complexe, on réinitialise `insideInstrText` par sécurité
+                    // La logique plus robuste repose sur `w:fldChar` begin/separate/end
+                }
+
+                // Récursion sur les enfants
+                if (node.childNodes && node.childNodes.length > 0) {
+                    for (let i = 0; i < node.childNodes.length; i++) {
+                        traverseNodes(node.childNodes[i]);
+                    }
+                }
+                // Important: Réinitialiser `insideInstrText` à la sortie de la balise <w:instrText>
+                // Cependant, sa portée est locale à la fonction, il faut une gestion plus globale
+                // La simplification: on se base sur le fait que les <w:t> sont soit directements fils de <w:r>,
+                // soit dans <w:instrText>. L'approche initiale avec `parentNode` était peut-être plus simple.
+            }
+
+             // Ré-implémentation plus simple basée sur l'ascendance de w:t
+             let refinedText = '';
+             for (let i = 0; i < textNodes.length; i++) {
+                 let current = textNodes[i];
+                 let isInstr = false;
+                 while (current && current !== element) {
+                     if (current.nodeName === 'w:instrText') {
+                         isInstr = true;
+                         break;
+                     }
+                     current = current.parentNode;
+                 }
+                 if (!isInstr) {
+                     refinedText += textNodes[i].textContent;
+                 }
+             }
+
+            // Ajouter la gestion des sauts de ligne/tab via w:br et w:tab qui sont au même niveau que w:r
+            const directChildren = element.childNodes;
+             for (let i = 0; i < directChildren.length; i++) {
+                 if (directChildren[i].nodeName === 'w:pPr') continue; // Ignorer les propriétés
+                 if (directChildren[i].nodeName === 'w:r') continue; // Texte déjà traité via getElementsByTagName('w:t')
+
+                 // Traiter les autres éléments directs comme w:br, w:tab
+                 // Note: getParagraphText est souvent appelé sur <w:tc> qui ne contient pas directement w:br/w:tab
+                 // Ils sont dans le <w:p> à l'intérieur de <w:tc>. Cette partie est peut-être redondante
+                 // ou mal placée selon l'usage exact. Conservons la logique sur w:t pour le moment.
+             }
+
+            return refinedText.trim(); // Nettoyer les espaces en début/fin
+        }
+
+        /** Récupère le nom du style de paragraphe (w:pStyle) d'un élément <w:p>. */
+        function getParagraphStyle(pElement) {
+            const pPrNodes = pElement.getElementsByTagName('w:pPr');
+            if (pPrNodes.length > 0) {
+                const pStyleNodes = pPrNodes[0].getElementsByTagName('w:pStyle');
+                if (pStyleNodes.length > 0) {
+                    // Retourne la valeur de l'attribut w:val qui contient le nom du style
+                    return pStyleNodes[0].getAttribute('w:val');
+                }
+            }
+            return null; // Aucun style de paragraphe trouvé
+        }
+
+        /** Extrait des informations de base sur le document XML. */
+        function extractInfo_enhanced(xmlDoc) {
+            console.log("Extraction des informations de base (enhanced)...");
+             try {
+                 const paragraphs = xmlDoc.getElementsByTagName('w:p');
+                 const tables = xmlDoc.getElementsByTagName('w:tbl');
+                 const styles = new Set();
+                 for (let i = 0; i < paragraphs.length; i++) {
+                     const style = getParagraphStyle(paragraphs[i]);
+                     if (style) styles.add(style);
+                 }
+
+                 reportData.metadata.info = {
+                     paragraph_count: paragraphs.length,
+                     table_count: tables.length,
+                     unique_styles: Array.from(styles).sort()
+                 };
+                 console.log("Infos extraites:", reportData.metadata.info);
+             }
+             catch (e) {
+                 console.error("Erreur pendant l'extraction des informations:", e);
+                 reportData.metadata.info = { error: `Erreur extraction info: ${e.message}` };
+             }
+        }
+
+        /** Extrait la structure (chapitres/sections/sous-sections basés sur TitreX) et les tableaux. */
+        function extractStructureAndTables_enhanced(xmlDoc) {
+            console.log("Extraction de la structure et des tableaux (Logique TitreX)...");
+            reportData.chapters = []; // Réinitialiser les chapitres
+
+            const body = xmlDoc.getElementsByTagName('w:body')[0];
+            if (!body) {
+                console.error("Balise w:body introuvable dans le document XML.");
+                updateStatus("Erreur: Structure du document invalide (pas de w:body).", true);
+                return; // Arrêter si la structure de base manque
+            }
+
+            let currentChapter = null;
+            let currentSection = null;
+            let currentSubsection = null;
+            // Conteneur temporaire pour les éléments avant le premier Titre1
+            let pendingContentBeforeFirstChapter = [];
+
+            const elements = Array.from(body.children); // Enfants directs de w:body (w:p, w:tbl, etc.)
+            console.log(`Traitement de ${elements.length} éléments directs dans w:body.`);
+
+            elements.forEach((element, index) => {
+                const elementName = element.nodeName;
+
+                if (elementName === 'w:p') { // C'est un paragraphe
+                    const paraText = getParagraphText(element);
+                    const style = getParagraphStyle(element);
+                    // Ignorer les paragraphes "vides" sauf s'ils contiennent un dessin/image
+                    // Note: La détection d'image (<w:drawing>) est simpliste ici.
+                    if (!paraText && element.getElementsByTagName('w:drawing').length === 0) {
+                        // console.log(`Paragraphe vide ignoré (index ${index})`);
+                        return; // Passer au suivant
+                    }
+
+                    let level = 0; // Niveau hiérarchique (0 = normal, 1 = Titre1, etc.)
+                    // --- Logique de Détection basée sur les Styles ---
+                    // IMPORTANT: Ces noms de style ('Titre1', etc.) doivent correspondre EXACTEMENT
+                    // à ceux utilisés dans le document Word. La casse peut importer.
+                    // Adaptez ces chaînes si vos styles s'appellent différemment (ex: "Heading 1").
+                    if (style === 'Titre1') { level = 1; }
+                    else if (style === 'Titre2') { level = 2; }
+                    else if (style === 'Titre3') { level = 3; }
+                    // --- Fin de la Logique de Détection ---
+
+                    if (level === 1) { // Nouveau Chapitre
+                         console.log(`%c---> CHAPITRE (Niveau 1 - Style: ${style}): ${paraText.substring(0, 60)}...`, 'color: blue; font-weight: bold;');
+                         // Créer le nouveau chapitre
+                         currentChapter = {
+                             id: generateId(),
+                             title: paraText,
+                             level: 1,
+                             style: style, // Stocker le style pour info
+                             content: [], // Contenu propre au chapitre (avant la première section)
+                             sections: [], // Sous-sections
+                             comments: []  // Commentaires sur le chapitre lui-même
+                         };
+                         reportData.chapters.push(currentChapter);
+                         // Réinitialiser les niveaux inférieurs
+                         currentSection = null;
+                         currentSubsection = null;
+                         // Le contenu en attente avant ce chapitre est traité à la fin
+
+                    } else if (level === 2 && currentChapter) { // Nouvelle Section (dans un chapitre)
+                         console.log(`%c-----> SECTION (Niveau 2 - Style: ${style}) sous [${currentChapter.title.substring(0,20)}]: ${paraText.substring(0, 50)}...`, 'color: green;');
+                         currentSection = {
+                             id: generateId(),
+                             title: paraText,
+                             level: 2,
+                             style: style,
+                             content: [],
+                             subsections: [],
+                             comments: []
+                         };
+                         currentChapter.sections.push(currentSection);
+                         // Réinitialiser le niveau inférieur
+                         currentSubsection = null;
+
+                    } else if (level === 3 && currentSection) { // Nouvelle Sous-section (dans une section)
+                         console.log(`%c-------> SOUS-SECTION (Niveau 3 - Style: ${style}) sous [${currentSection.title.substring(0,20)}]: ${paraText.substring(0, 40)}...`, 'color: orange;');
+                         currentSubsection = {
+                             id: generateId(),
+                             title: paraText,
+                             level: 3,
+                             style: style,
+                             content: [], // Contenu propre à la sous-section
+                             comments: []
+                         };
+                         currentSection.subsections.push(currentSubsection);
+                         // Pas de niveau inférieur géré actuellement
+
+                    } else { // Paragraphe normal (ou titre non détecté/hors contexte)
+                        const paragraphData = {
+                            id: generateId(),
+                            type: 'paragraph', // Marquer le type d'élément de contenu
+                            text: paraText,
+                            style: style, // Stocker le style pour info/debug
+                            comments: []
+                        };
+                        // Attacher le paragraphe au niveau le plus profond actuel
+                        if (currentSubsection) { currentSubsection.content.push(paragraphData); }
+                        else if (currentSection) { currentSection.content.push(paragraphData); }
+                        else if (currentChapter) { currentChapter.content.push(paragraphData); }
+                        else {
+                            // Contenu avant le premier chapitre Titre1
+                            pendingContentBeforeFirstChapter.push(paragraphData);
+                        }
+                    }
+                } else if (elementName === 'w:tbl') { // C'est un tableau
+                     console.log(`%cTableau détecté (index ${index}). Extraction...`, 'color: purple;');
+                     const tableData = _extractSingleTableData(element); // Fonction helper
+                     if (tableData) {
+                         // Attacher le tableau au niveau le plus profond actuel
+                         if (currentSubsection) { currentSubsection.content.push(tableData); }
+                         else if (currentSection) { currentSection.content.push(tableData); }
+                         else if (currentChapter) { currentChapter.content.push(tableData); }
+                         else {
+                             // Tableau avant le premier chapitre Titre1
+                            pendingContentBeforeFirstChapter.push(tableData);
+                         }
+                     } else {
+                         console.warn(`Impossible d'extraire les données du tableau à l'index ${index}. Tableau ignoré.`);
+                     }
+                } else if (elementName === 'w:sdt') {
+                     // Section de contenu structuré (peut contenir p, tbl, etc.) - On explore dedans
+                     console.log(`%cContrôle de contenu <w:sdt> détecté (index ${index}). Exploration...`, 'color: gray;');
+                     const sdtContent = element.getElementsByTagName('w:sdtContent')[0];
+                     if (sdtContent) {
+                         const sdtChildren = Array.from(sdtContent.children);
+                         // Traiter récursivement les enfants du sdtContent (simplification : on les ajoute comme s'ils étaient directs)
+                         // Une meilleure approche pourrait créer un type 'sdt' ou analyser le type de contrôle
+                         sdtChildren.forEach(sdtChild => {
+                             // Logique similaire à la boucle principale, mais ajoutant au contexte courant
+                             if (sdtChild.nodeName === 'w:p') {
+                                 const paraText = getParagraphText(sdtChild);
+                                 const style = getParagraphStyle(sdtChild);
+                                 if (!paraText && sdtChild.getElementsByTagName('w:drawing').length === 0) return;
+                                 const paragraphData = { id: generateId(), type: 'paragraph', text: paraText, style: style, comments: [] };
+                                 if (currentSubsection) currentSubsection.content.push(paragraphData);
+                                 else if (currentSection) currentSection.content.push(paragraphData);
+                                 else if (currentChapter) currentChapter.content.push(paragraphData);
+                                 else pendingContentBeforeFirstChapter.push(paragraphData);
+                             } else if (sdtChild.nodeName === 'w:tbl') {
+                                 const tableData = _extractSingleTableData(sdtChild);
+                                 if (tableData) {
+                                     if (currentSubsection) currentSubsection.content.push(tableData);
+                                     else if (currentSection) currentSection.content.push(tableData);
+                                     else if (currentChapter) currentChapter.content.push(tableData);
+                                     else pendingContentBeforeFirstChapter.push(tableData);
+                                 }
+                             }
+                             // Ajouter d'autres types si nécessaire (ex: autre sdt imbriqué)
+                         });
+                     }
+                } else {
+                    // Ignorer les autres types d'éléments directs de w:body (ex: w:sectPr)
+                    // console.log(`Élément ignoré: ${elementName}`);
+                }
+            }); // Fin de la boucle forEach sur les éléments de body
+
+            // Gérer le contenu qui était avant le tout premier Titre1
+            if (pendingContentBeforeFirstChapter.length > 0) {
+                 console.log(`%cTraitement de ${pendingContentBeforeFirstChapter.length} éléments trouvés AVANT le premier chapitre (Titre1).`, 'color: brown; font-weight: bold;');
+                 // Option 1: Créer un chapitre "Introduction" ou "Avant-propos" implicite
+                 const introChapter = {
+                     id: generateId(),
+                     title: "Contenu Initial (Avant le Premier Titre)",
+                     level: 1, // Traité comme un chapitre pour la structure
+                     style: null,
+                     content: pendingContentBeforeFirstChapter, // Assigner le contenu en attente
+                     sections: [],
+                     comments: []
+                 };
+                 // Insérer ce chapitre au DÉBUT de la liste des chapitres
+                 reportData.chapters.unshift(introChapter);
+                 console.log("Chapitre implicite 'Contenu Initial' créé pour les éléments pré-Titre1.");
+
+                 // Option 2 (alternative): Attacher au premier chapitre trouvé (si un existe)
+                 /* if (reportData.chapters.length > 0) {
+                      reportData.chapters[0].content.unshift(...pendingContentBeforeFirstChapter);
+                      console.log("Contenu pré-Titre1 ajouté au début du premier chapitre trouvé.");
+                 } else {
+                      // S'il n'y a AUCUN chapitre Titre1, créer un chapitre par défaut pour TOUT
+                      reportData.chapters.push({ ... introChapter, title: "Contenu Non Structuré (Aucun Titre Détecté)"});
+                      console.log("Aucun Titre1 trouvé, création d'un chapitre par défaut pour tout le contenu.");
+                 } */
+             }
+
+            // Gérer le cas où absolument aucun titre (Titre1, 2 ou 3) n'a été trouvé
+             if (reportData.chapters.length === 0 && pendingContentBeforeFirstChapter.length === 0) {
+                // Si on arrive ici, c'est que la boucle principale n'a rien ajouté et qu'il n'y avait rien avant non plus.
+                // Cela peut arriver si le document est vide, ou contient que des éléments non traités (ex: seulement des sectPr)
+                // Ou si *tout* le contenu était en attente mais n'a pas été assigné (ce qui serait un bug dans la logique ci-dessus)
+                // Vérifions s'il y avait des éléments mais qu'ils n'ont pas été classés
+                if (elements.length > 0) {
+                     console.warn("Aucune structure de Titre (1, 2, 3) détectée ET aucun contenu initial non plus, MAIS des éléments existaient dans w:body. Création d'un chapitre par défaut pour contenir les éléments non classifiés (si possible).");
+                     // Tentative de récupération des éléments non classifiés (ceci est une rustine, la logique devrait les attraper)
+                     const allContentFallback = [];
+                     elements.forEach(element => {
+                         if (element.nodeName === 'w:p') {
+                             const paraText = getParagraphText(element);
+                             const style = getParagraphStyle(element);
+                              if (!paraText && element.getElementsByTagName('w:drawing').length === 0) return;
+                             allContentFallback.push({ id: generateId(), type: 'paragraph', text: paraText, style: style, comments: [] });
+                         } else if (element.nodeName === 'w:tbl') {
+                              const tableData = _extractSingleTableData(element);
+                              if(tableData) allContentFallback.push(tableData);
+                         }
+                     });
+                     if (allContentFallback.length > 0) {
+                         reportData.chapters.push({
+                             id: generateId(), title: "Contenu Non Structuré (Aucun Titre Détecté)", level: 1, style: null,
+                             content: allContentFallback, sections: [], comments: []
+                         });
+                         console.log(`Chapitre par défaut créé avec ${allContentFallback.length} éléments.`);
+                     } else {
+                         console.warn("Aucun élément de contenu (p, tbl) récupérable trouvé pour le chapitre par défaut.");
+                     }
+                } else {
+                    console.log("Le document semble vide ou ne contient que des éléments non textuels/tabulaires non gérés.");
+                }
+            }
+
+            console.log("Extraction Structure & Tableaux terminée.");
+        }
+
+        /** Helper pour extraire les données d'un seul tableau <w:tbl>. */
+        function _extractSingleTableData(tableElement) {
+             if (!tableElement || tableElement.nodeName !== 'w:tbl') return null;
+
+             // Créer l'objet de base pour le tableau
+             const tableData = {
+                 id: generateId(),
+                 type: 'table', // Marquer comme type 'table'
+                 title: `Tableau`, // Titre par défaut
+                 rows: [],
+                 comments: []
+             };
+
+             // Essayer de trouver un titre dans le paragraphe précédent (heuristique)
+             let previousElement = tableElement.previousElementSibling;
+             // Remonter jusqu'au premier w:p ou w:tbl précédent (ignorer les autres types comme w:sectPr)
+             while (previousElement && previousElement.nodeName !== 'w:p' && previousElement.nodeName !== 'w:tbl') {
+                 previousElement = previousElement.previousElementSibling;
+             }
+             if (previousElement && previousElement.nodeName === 'w:p') {
+                 const potentialTitle = getParagraphText(previousElement);
+                 // Considérer comme titre si non vide et raisonnablement court
+                 if (potentialTitle && potentialTitle.length < 150) {
+                     tableData.title = potentialTitle;
+                     console.log(`  > Titre de tableau trouvé (paragraphe précédent): "${potentialTitle}"`);
+                 } else {
+                      console.log(`  > Paragraphe précédent trouvé mais non utilisé comme titre (trop long ou vide).`);
+                 }
+             } else {
+                 // Si pas de titre trouvé, utiliser un titre générique numéroté
+                 // Compter combien de tables ont déjà été ajoutées à la structure
+                 let tableCount = 0;
+                 function countTables(node) {
+                     if (!node || typeof node !== 'object') return;
+                     if(node.type === 'table') tableCount++;
+                     const keys = ['chapters', 'sections', 'subsections', 'content'];
+                     keys.forEach(key => {
+                         if(node[key] && Array.isArray(node[key])) {
+                             node[key].forEach(child => countTables(child));
+                         }
+                     });
+                 }
+                 countTables(reportData); // Compte dans les données déjà extraites
+                 tableData.title = `Tableau ${tableCount + 1}`; // +1 car on ajoute celui-ci
+                 console.log(`  > Aucun titre trouvé pour le tableau, utilisation du titre généré: "${tableData.title}"`);
+             }
+
+
+             // Extraire les lignes (w:tr)
+             const rowElements = Array.from(tableElement.getElementsByTagName('w:tr'));
+             console.log(`  > ${rowElements.length} lignes (w:tr) trouvées dans le tableau.`);
+
+             // Map pour suivre les cellules verticalement fusionnées (vMerge='continue')
+             // La clé est l'index de colonne, la valeur est l'ID de la cellule qui a commencé la fusion
+             let vMergeStarters = {};
+
+             for (let r = 0; r < rowElements.length; r++) {
+                 const rowElement = rowElements[r];
+                 const row = { id: generateId(), cells: [] };
+                 const cellElements = Array.from(rowElement.getElementsByTagName('w:tc'));
+                 let currentGridCol = 0; // Suivre la colonne actuelle en tenant compte de colspan
+
+                 for (let c = 0; c < cellElements.length; c++) {
+                     const cellElement = cellElements[c];
+                     // Extraire le texte de la cellule (prend le texte de tous les <w:p> dans <w:tc>)
+                     // Amélioration: Concaténer le texte de plusieurs paragraphes s'il y en a
+                     const cellParagraphs = cellElement.getElementsByTagName('w:p');
+                     let cellText = '';
+                     for(let p=0; p < cellParagraphs.length; p++){
+                         cellText += getParagraphText(cellParagraphs[p]) + (p < cellParagraphs.length - 1 ? '\n' : ''); // Ajouter \n entre paragraphes
+                     }
+                     cellText = cellText.trim();
+
+
+                     let colspan = 1;
+                     let vMerge = null; // null, 'restart', ou 'continue'
+                     let isMergedCellPlaceholder = false; // Indicateur si cette cellule est "mangée" par un vMerge='continue' au-dessus
+
+                     // Extraire les propriétés de la cellule (w:tcPr)
+                     const tcPrNodes = cellElement.getElementsByTagName('w:tcPr');
+                     if (tcPrNodes.length > 0) {
+                         const tcPr = tcPrNodes[0];
+                         // Gestion de la fusion horizontale (colspan)
+                         const gridSpanNodes = tcPr.getElementsByTagName('w:gridSpan');
+                         if (gridSpanNodes.length > 0 && gridSpanNodes[0].getAttribute('w:val')) {
+                             colspan = parseInt(gridSpanNodes[0].getAttribute('w:val'), 10) || 1;
+                         }
+                         // Gestion de la fusion verticale (vMerge)
+                         const vMergeNodes = tcPr.getElementsByTagName('w:vMerge');
+                         if (vMergeNodes.length > 0) {
+                             // Si l'attribut w:val="restart" est présent, c'est le début d'une fusion verticale
+                             if (vMergeNodes[0].hasAttribute('w:val') && vMergeNodes[0].getAttribute('w:val') === 'restart') {
+                                 vMerge = 'restart';
+                                 // Enregistrer cette cellule comme début de fusion pour cette colonne (et celles couvertes par colspan)
+                                 for (let i = 0; i < colspan; i++) {
+                                      vMergeStarters[currentGridCol + i] = generateId(); // Générer l'ID maintenant pour la cellule
+                                 }
+                             } else {
+                                 // Si la balise <w:vMerge> est présente SANS w:val="restart", c'est une cellule continuée
+                                 vMerge = 'continue';
+                                 // Vérifier s'il y avait une cellule "restart" au-dessus dans cette colonne
+                                 if (vMergeStarters[currentGridCol]) {
+                                     // Cette cellule fait partie d'une fusion démarrée plus haut
+                                     isMergedCellPlaceholder = true;
+                                      // On pourrait stocker l'ID de la cellule mère: mergedWith = vMergeStarters[currentGridCol];
+                                 } else {
+                                     // Fusion continue sans début trouvé ? Situation anormale. On traite comme non fusionné.
+                                     console.warn(`Cellule (r:${r}, c:${c}, gridCol:${currentGridCol}) a vMerge=continue mais pas de 'restart' trouvé au-dessus.`);
+                                     vMerge = null;
+                                 }
+                             }
+                         } else {
+                            // Pas de w:vMerge, donc cette colonne n'est plus fusionnée verticalement
+                            for (let i = 0; i < colspan; i++) {
+                                delete vMergeStarters[currentGridCol + i];
+                            }
+                         }
+                     } else {
+                         // Pas de tcPr, donc fin des fusions verticales pour ces colonnes
+                         for (let i = 0; i < colspan; i++) {
+                            delete vMergeStarters[currentGridCol + i];
+                         }
+                     }
+
+                     // Générer l'ID de la cellule s'il n'a pas été généré par vMerge='restart'
+                     const cellId = (vMerge === 'restart' && vMergeStarters[currentGridCol]) ? vMergeStarters[currentGridCol] : generateId();
+
+                     // Ajouter la cellule aux données de la ligne, SAUF si c'est une cellule "mangée" par vMerge
+                     // On la stocke quand même mais avec une indication, ou on l'ignore complètement ?
+                     // Pour la RENDERISATION, il faudra ignorer les 'continue'. Pour les DONNÉES, les garder peut être utile.
+                     // Option: Garder toutes les cellules, mais marquer celles qui sont des placeholders.
+                      const cellData = {
+                          id: cellId,
+                          text: cellText,
+                          comments: [],
+                          colspan: colspan,
+                          vMerge: vMerge,
+                          // isPlaceholder: isMergedCellPlaceholder // Propriété optionnelle
+                      };
+                      row.cells.push(cellData);
+
+
+                     // Mettre à jour la colonne de grille actuelle
+                     currentGridCol += colspan;
+                 } // Fin boucle cellules (c)
+
+                 // Ajouter la ligne si elle contient des cellules
+                 if (row.cells.length > 0) {
+                     tableData.rows.push(row);
+                 } else {
+                      console.log(`  > Ligne ${r} ignorée car aucune cellule (w:tc) n'a été trouvée.`);
+                 }
+             } // Fin boucle lignes (r)
+
+             // Retourner les données du tableau seulement s'il contient des lignes
+             return tableData.rows.length > 0 ? tableData : null;
+        }
+
+
+        // --- Fonctions de Rendu HTML (Améliorées) ---
+
+        /** Affiche la structure complète du rapport dans le DOM. */
+        function displayReport_enhanced() {
+             console.log("displayReport_enhanced: Démarrage de l'affichage...");
+             if (!reportData) {
+                 console.warn("displayReport_enhanced appelé mais reportData est null. Rien à afficher.");
+                 if(outputContainer) outputContainer.style.display = 'none';
+                 if(docInfoElement) docInfoElement.innerHTML = '';
+                 if(docStructureElement) docStructureElement.innerHTML = '';
+                 return;
+             }
+
+             if (!outputContainer || !docInfoElement || !docStructureElement) {
+                  console.error("displayReport_enhanced: Conteneurs d'affichage (output, info, structure) non trouvés !");
+                  return;
+             }
+
+             outputContainer.style.display = 'block'; // Afficher le conteneur principal
+
+             // Afficher les informations générales (métadonnées)
+             docInfoElement.innerHTML = ''; // Nettoyer d'abord
+             if (reportData.metadata?.info) {
+                 const info = reportData.metadata.info;
+                 let infoHtml = `<p><strong>Informations du Document :</strong></p>`;
+                 if (reportData.metadata.originalFilename) {
+                    infoHtml += `<p>Fichier source: <em>${reportData.metadata.originalFilename}</em></p>`;
+                 }
+                 infoHtml += `<p>Paragraphes (estimation): ${info.paragraph_count ?? 'N/A'}</p>`;
+                 infoHtml += `<p>Tableaux (détectés): ${info.table_count ?? 'N/A'}</p>`;
+                 if (info.unique_styles && info.unique_styles.length > 0) {
+                     infoHtml += `<p>Styles Uniques détectés (${info.unique_styles.length}): <small>${info.unique_styles.join(', ')}</small></p>`;
+                 } else {
+                      infoHtml += `<p>Styles Uniques: Aucun détecté ou extraction échouée.</p>`;
+                 }
+                 if (info.error) {
+                     infoHtml += `<p style="color:red;"><strong>Erreur lors de l'extraction d'info:</strong> ${info.error}</p>`;
+                 }
+                 docInfoElement.innerHTML = infoHtml;
+             } else {
+                 docInfoElement.innerHTML = '<p>Informations générales sur le document non disponibles.</p>';
+             }
+
+             // Afficher la structure principale (chapitres)
+             docStructureElement.innerHTML = ''; // Nettoyer d'abord
+             if (!reportData.chapters || reportData.chapters.length === 0) {
+                 // Message si aucune structure de chapitre n'a été trouvée par l'extraction
+                  docStructureElement.innerHTML = '<p><em>Aucune structure de chapitre (basée sur les styles Titre1/2/3) n\'a été trouvée dans ce document, ou le document est vide.</em></p>';
+                  console.warn("Aucun chapitre trouvé dans reportData pour le rendu.");
+             } else {
+                 console.log(`Affichage de ${reportData.chapters.length} chapitre(s).`);
+                 // Itérer sur les chapitres et appeler la fonction de rendu récursive
+                 reportData.chapters.forEach((chapter, index) => {
+                     renderStructureElement_enhanced(docStructureElement, chapter);
+                 });
+             }
+
+             // Mettre à jour l'état visuel des commentaires (visible/caché)
+             updateCommentVisibility(); // Assure que les commentaires sont affichés/masqués selon l'état global
+
+             console.log("displayReport_enhanced: Affichage terminé.");
+        }
+
+        /** Rend un élément de structure (chapitre, section, sous-section) et son contenu. */
+        function renderStructureElement_enhanced(parentElement, item) {
+            // item: Un objet chapter, section, ou subsection de reportData
+             // console.log(`Rendu élément structure ID ${item.id}, Niveau ${item.level}, Titre: ${item.title?.substring(0,30)}`);
+
+            const elementDiv = document.createElement('div');
+            elementDiv.classList.add('report-element');
+            elementDiv.dataset.id = item.id; // Lier l'élément DOM à l'objet de données via ID
+
+            // Afficher le titre s'il existe
+            if (item.title) {
+                // Choisir la balise Hn en fonction du niveau (H2 pour niv 1, H3 pour niv 2, H4 pour niv 3+)
+                const headingLevel = Math.min(item.level + 1, 4); // Limiter à H4 max
+                const titleElement = document.createElement(`h${headingLevel}`);
+                titleElement.textContent = item.title;
+                titleElement.dataset.id = item.id; // Lier aussi le titre à l'ID
+                titleElement.contentEditable = "true"; // Rendre le titre éditable
+
+                // Ajouter les classes CSS spécifiques au niveau
+                if (item.level === 1) titleElement.classList.add('chapter-title');
+                else if (item.level === 2) titleElement.classList.add('section-title');
+                else if (item.level === 3) titleElement.classList.add('subsection-title');
+
+                 // Attacher l'écouteur pour la modification du titre
+                titleElement.addEventListener('input', handleContentEdit); // Utilise la même fonction que les paras/cellules
+
+                // Créer et ajouter le bouton commentaire au titre
+                const commentBtn = createCommentButton(item.id);
+                titleElement.appendChild(commentBtn); // Ajouter le bouton DANS l'élément titre
+
+                elementDiv.appendChild(titleElement); // Ajouter le titre au div principal de l'élément
+
+                // Rendre les commentaires associés à cet élément (après le titre)
+                renderComments(elementDiv, item, titleElement);
+            }
+
+            // Rendre le contenu direct de cet élément (paragraphes, tableaux)
+            item.content?.forEach(contentItem => {
+                 if (!contentItem || !contentItem.type || !contentItem.id) {
+                     console.warn("Élément de contenu invalide ou manquant de type/id, ignoré:", contentItem, "dans parent:", item);
+                     return;
+                 }
+                if (contentItem.type === 'paragraph') {
+                    renderParagraph_enhanced(elementDiv, contentItem);
+                } else if (contentItem.type === 'table') {
+                     renderTable_enhanced(elementDiv, contentItem);
+                } else {
+                    console.warn(`Type de contenu non géré pour le rendu: ${contentItem.type}`, contentItem);
+                }
+            });
+
+            // Rendre récursivement les sous-éléments (sections puis sous-sections)
+            item.sections?.forEach(section => renderStructureElement_enhanced(elementDiv, section));
+            item.subsections?.forEach(subsection => renderStructureElement_enhanced(elementDiv, subsection));
+
+            // Ajouter l'élément complet (div avec titre, contenu, sous-éléments) au parent DOM
+            parentElement.appendChild(elementDiv);
+        }
+
+        /** Rend un paragraphe éditable. */
+        function renderParagraph_enhanced(parentElement, paraData) {
+             // Conteneur pour le paragraphe et son bouton commentaire
+             const paraContainer = document.createElement('div');
+             paraContainer.classList.add('content-paragraph-container', 'report-element'); // Marquer comme report-element pour la recherche d'ID
+             paraContainer.dataset.id = paraData.id; // ID sur le conteneur
+
+             // L'élément paragraphe lui-même
+             const p = document.createElement('p');
+             p.classList.add('content-paragraph');
+             p.contentEditable = "true"; // Rendre éditable
+             p.dataset.id = paraData.id; // Répéter l'ID ici pour handleContentEdit sur event.target
+             // Gérer les sauts de ligne potentiels dans le texte extrait
+             p.innerText = paraData.text || ''; // Utiliser innerText pour interpréter les \n
+
+             // Créer et ajouter le bouton commentaire (au conteneur)
+             const commentBtn = createCommentButton(paraData.id);
+             paraContainer.appendChild(commentBtn); // Ajouter AVANT le paragraphe
+
+             // Ajouter le paragraphe au conteneur
+             paraContainer.appendChild(p);
+
+             // Attacher l'écouteur pour la modification du contenu
+             p.addEventListener('input', handleContentEdit);
+
+             // Rendre les commentaires associés à ce paragraphe (dans le conteneur)
+             renderComments(paraContainer, paraData); // Les commentaires s'afficheront après le <p>
+
+             // Ajouter le conteneur complet au parent DOM
+             parentElement.appendChild(paraContainer);
+        }
+
+        /** Rend un tableau éditable. */
+        function renderTable_enhanced(parentElement, tableData) {
+            // Conteneur principal pour le tableau, sa légende, et ses commentaires
+            const container = document.createElement('div');
+            container.classList.add('report-table-container', 'report-element');
+            container.dataset.id = tableData.id; // ID sur le conteneur
+
+            // Création de l'élément table
+            const table = document.createElement('table');
+            table.classList.add('report-table');
+
+            // Création de la légende (caption)
+            const caption = table.createCaption();
+            caption.textContent = tableData.title || 'Tableau sans titre'; // Texte de la légende
+            caption.contentEditable = "true"; // Rendre la légende éditable aussi
+            caption.dataset.id = tableData.id; // ID pour l'édition (on modifie tableData.title)
+            caption.addEventListener('input', handleCaptionEdit); // Listener spécifique pour la légende
+
+            // Ajouter le bouton commentaire à la légende
+            const tableCommentBtn = createCommentButton(tableData.id);
+            caption.appendChild(tableCommentBtn); // Ajouter le bouton DANS la légende
+
+            // Création du corps du tableau (tbody)
+            const tbody = table.createTBody();
+            let vMergeInfo = {}; // Suivi des fusions verticales pour le rendu (rowspan)
+                                 // Clé: colIndex, Valeur: { tdElement: element, remainingRows: count }
+
+            tableData.rows?.forEach((rowData, rowIndex) => {
+                const tr = tbody.insertRow();
+                tr.dataset.id = rowData.id; // ID sur la ligne
+                let currentGridCol = 0; // Suivi de la colonne pour colspan
+
+                rowData.cells?.forEach((cellData, cellIndex) => {
+
+                    // Gérer la fusion verticale (partie rendu)
+                    if (vMergeInfo[currentGridCol]) {
+                        // Si une cellule au-dessus dans cette colonne a un rowspan actif
+                        vMergeInfo[currentGridCol].remainingRows--;
+                        if (vMergeInfo[currentGridCol].remainingRows <= 0) {
+                            delete vMergeInfo[currentGridCol]; // Fin du rowspan
+                        }
+                        // Ne pas créer de cellule TD ici, passer à la colonne suivante (en tenant compte du colspan de la cellule fusionnante)
+                        // On suppose que cellData.colspan=1 pour les cellules "cachées" par vMerge='continue'
+                        currentGridCol += cellData.colspan || 1;
+                        return; // Passer à la cellule suivante dans les données
+                    }
+
+                    // Créer la cellule TD
+                    const td = tr.insertCell();
+                    td.dataset.id = cellData.id; // ID sur la cellule
+                    td.contentEditable = "true"; // Rendre éditable
+                    // Gérer les sauts de ligne dans le texte de la cellule
+                    td.innerText = cellData.text || '';
+
+                    // Appliquer colspan
+                    if (cellData.colspan && cellData.colspan > 1) {
+                        td.colSpan = cellData.colspan;
+                    }
+
+                    // Appliquer rowspan (basé sur vMerge='restart')
+                    if (cellData.vMerge === 'restart') {
+                        // Compter combien de 'continue' suivent dans les lignes suivantes
+                        let rowSpanCount = 1;
+                        for (let nextRowIdx = rowIndex + 1; nextRowIdx < tableData.rows.length; nextRowIdx++) {
+                            // Trouver la cellule correspondante dans la ligne suivante (attention au colspan)
+                            let nextRowTargetCol = 0;
+                            let foundCell = false;
+                            for(let nextCellIdx=0; nextCellIdx < tableData.rows[nextRowIdx].cells.length; nextCellIdx++){
+                                const nextCell = tableData.rows[nextRowIdx].cells[nextCellIdx];
+                                if(nextRowTargetCol === currentGridCol){
+                                    if(nextCell.vMerge === 'continue'){
+                                        rowSpanCount++;
+                                        foundCell = true;
+                                    }
+                                    break; // Sortir de la boucle interne une fois la colonne trouvée
+                                }
+                                nextRowTargetCol += nextCell.colspan || 1;
+                                if(nextRowTargetCol > currentGridCol) break; // Dépassé la colonne cible
+                            }
+                             if (!foundCell) break; // Arrêter si la cellule suivante n'est pas vMerge='continue'
+                        }
+
+                        if (rowSpanCount > 1) {
+                            td.rowSpan = rowSpanCount;
+                            // Enregistrer l'info pour sauter les rendus des cellules suivantes
+                            vMergeInfo[currentGridCol] = { tdElement: td, remainingRows: rowSpanCount -1 };
+                        }
+                    }
+
+                    // Ajouter une classe si c'est une cellule qui continue une fusion (peut être utile pour le style)
+                    if (cellData.vMerge === 'continue') {
+                        td.classList.add('vmerged-continue'); // Classe spécifique pour le rendu, même si la cellule n'est pas rendue
+                        // Note: avec la logique rowspan ci-dessus, ces TD ne devraient pas être créés.
+                        // Mais si on change la logique, cette classe pourrait être utile.
+                    }
+
+
+                    // Ajouter le bouton commentaire à la cellule
+                    const cellCommentBtn = createCommentButton(cellData.id);
+                    td.appendChild(cellCommentBtn); // Ajouter DANS la cellule
+
+                    // Attacher l'écouteur pour l'édition
+                    td.addEventListener('input', handleContentEdit);
+
+                    // Mettre à jour la position de colonne pour la prochaine cellule
+                     currentGridCol += cellData.colspan || 1;
+
+                }); // Fin foreach cell
+            }); // Fin foreach row
+
+            // Ajouter la table au conteneur
+            container.appendChild(table);
+
+            // Rendre les commentaires associés au tableau lui-même (dans le conteneur, après la table)
+            renderComments(container, tableData);
+
+            // Ajouter le conteneur complet au parent DOM
+            parentElement.appendChild(container);
+        }
+
+        /** Gère la modification du contenu d'un élément éditable (p, td, h*, caption). */
+        function handleContentEdit(event) {
+             const targetElement = event.target;
+             // Essayer de trouver l'ID sur l'élément cible ou son conteneur parent le plus proche
+             const elementId = targetElement.dataset.id || targetElement.closest('[data-id]')?.dataset.id;
+
+             if (!elementId) {
+                 console.error("Impossible de trouver data-id pour l'élément édité:", targetElement);
+                 return;
+             }
+
+             // Trouver l'objet de données correspondant dans reportData
+             const dataObject = findElementById(elementId);
+
+             if (dataObject) {
+                 // Mettre à jour la propriété 'text' de l'objet de données
+                 // Utiliser innerText pour récupérer le contenu tel qu'affiché (avec sauts de ligne)
+                 // Utiliser trim() pour enlever les espaces superflus ajoutés par contentEditable parfois
+                 const newText = targetElement.innerText.trim();
+
+                 if (dataObject.hasOwnProperty('text')) {
+                      // Cas standard (paragraphe, cellule)
+                      if (dataObject.text !== newText) {
+                         dataObject.text = newText;
+                         // console.log(`Données mises à jour pour ID ${elementId}: nouveau texte = "${newText.substring(0, 50)}..."`);
+                         // Optionnel: Ajouter une indication visuelle que les données ont changé
+                     }
+                 } else if (dataObject.hasOwnProperty('title') && (targetElement.nodeName.startsWith('H') || targetElement.nodeName === 'CAPTION')) {
+                     // Cas spécifique pour les titres (Hn) et légendes (caption)
+                     if (dataObject.title !== newText) {
+                         dataObject.title = newText;
+                         // console.log(`Données mises à jour pour ID ${elementId}: nouveau titre = "${newText.substring(0, 50)}..."`);
+                     }
+                 } else {
+                     console.error(`Objet trouvé pour ID ${elementId}, mais ne possède ni propriété 'text' ni 'title' attendue pour l'édition.`, dataObject, targetElement);
+                 }
+             } else {
+                 console.error(`Impossible de trouver l'objet de données correspondant à l'ID: ${elementId}`);
+             }
+        }
+
+        /** Gère spécifiquement l'édition de la légende d'un tableau. */
+        function handleCaptionEdit(event) {
+             const targetElement = event.target; // L'élément <caption>
+             const elementId = targetElement.dataset.id; // Doit être l'ID de l'objet tableData
+
+             if (!elementId) {
+                 console.error("Impossible de trouver data-id pour la légende éditée:", targetElement);
+                 return;
+             }
+             const dataObject = findElementById(elementId); // Devrait trouver l'objet table
+
+             if (dataObject && dataObject.type === 'table' && dataObject.hasOwnProperty('title')) {
+                 const newTitle = targetElement.innerText.trim();
+                 if (dataObject.title !== newTitle) {
+                     dataObject.title = newTitle;
+                     // console.log(`Titre du tableau mis à jour pour ID ${elementId}: "${newTitle}"`);
+                 }
+             } else {
+                 console.error(`Impossible de trouver l'objet table avec propriété 'title' pour ID: ${elementId}`, dataObject);
+             }
+        }
+
+        // --- Fonctions de Gestion des Commentaires ---
+
+        /** Crée un bouton pour ajouter/voir les commentaires pour un élément cible. */
+        function createCommentButton(targetId) {
+            const button = document.createElement('button');
+            button.innerHTML = '💬'; // Utiliser innerHTML pour les emojis
+            button.title = 'Ajouter / Voir les commentaires';
+            button.classList.add('add-comment-btn');
+            button.dataset.targetId = targetId; // Stocker l'ID de l'élément associé
+            button.onclick = handleAddCommentClick; // Attacher le gestionnaire de clic
+
+            // Le bouton est initialement caché par CSS, mais on ajoute/retire la classe 'visible'
+            // en fonction de l'état global `commentsVisible` lors du rendu/mise à jour.
+             button.classList.toggle('visible', commentsVisible); // Appliquer l'état initial
+
+            return button;
+        }
+
+        /** Gère le clic sur le bouton "Ajouter/Voir Commentaire". */
+        function handleAddCommentClick(event) {
+            event.stopPropagation(); // Empêcher le clic de déclencher d'autres événements (ex: édition)
+            event.preventDefault(); // Empêcher le comportement par défaut si c'est dans un lien/form
+
+            const targetId = event.target.dataset.targetId;
+            if (!targetId) {
+                console.error("Bouton commentaire cliqué sans targetId !");
+                return;
+            }
+            console.log(`Clic sur bouton commentaire pour cible: ${targetId}`);
+
+            // Afficher une boîte de dialogue pour entrer le commentaire
+            const commentText = prompt(`Ajouter un commentaire pour l'élément (ID: ${targetId}):\n(Laissez vide pour annuler)`);
+
+            if (commentText && commentText.trim() !== '') {
+                // Si l'utilisateur entre du texte et valide
+                addComment(targetId, commentText.trim());
+            } else if (commentText === '') {
+                 // Si l'utilisateur valide avec un champ vide, on peut choisir de ne rien faire ou de supprimer les commentaires existants?
+                 console.log("Ajout de commentaire annulé (texte vide).");
+            } else {
+                // Si l'utilisateur annule (commentText est null)
+                console.log("Ajout de commentaire annulé.");
+            }
+        }
+
+        /** Ajoute un commentaire à l'objet de données correspondant à targetId. */
+        function addComment(targetId, text) {
+            const targetElementData = findElementById(targetId);
+            if (targetElementData) {
+                // S'assurer que le tableau des commentaires existe
+                if (!targetElementData.comments) {
+                    targetElementData.comments = [];
+                }
+                // Créer le nouvel objet commentaire
+                const newComment = {
+                    id: generateId(), // ID unique pour le commentaire lui-même
+                    text: text,
+                    author: "Utilisateur", // Pourrait être enrichi plus tard
+                    timestamp: new Date().toISOString() // Date et heure de création
+                };
+                // Ajouter le commentaire à la liste
+                targetElementData.comments.push(newComment);
+                console.log(`Commentaire ajouté à l'élément ${targetId}:`, newComment);
+
+                // Optionnel : Rafraîchir seulement la section commentaire concernée au lieu de tout redessiner
+                // Pour la simplicité, on redessine tout pour l'instant
+                 displayReport_enhanced(); // Re-rendre pour afficher le nouveau commentaire et mettre à jour la visibilité
+
+                updateStatus(`Commentaire ajouté à l'élément ${targetId}.`);
+                // S'assurer que les commentaires sont visibles après en avoir ajouté un
+                if (!commentsVisible) {
+                    handleToggleComments(); // Active la visibilité si elle ne l'était pas
+                }
+
+            } else {
+                console.error(`Impossible d'ajouter le commentaire: Élément cible ${targetId} non trouvé dans les données.`);
+                updateStatus(`Erreur: élément ${targetId} introuvable pour ajout de commentaire.`, true);
+            }
+        }
+
+        /** Rend la section des commentaires pour un élément donné. */
+        function renderComments(containerElement, itemData, insertAfterElement = null) {
+            // Chercher s'il existe déjà une section de commentaires pour cet item
+             let commentSection = containerElement.querySelector(`.comment-section[data-parent-id="${itemData.id}"]`);
+
+            // S'il y a des commentaires dans les données et qu'on doit les afficher
+            if (itemData.comments && itemData.comments.length > 0) {
+                if (!commentSection) {
+                    // Créer la div de la section commentaire si elle n'existe pas
+                    commentSection = document.createElement('div');
+                    commentSection.classList.add('comment-section');
+                    commentSection.dataset.parentId = itemData.id; // Lier à l'élément parent
+
+                    // Insérer la section commentaire au bon endroit
+                    if (insertAfterElement && insertAfterElement.parentNode === containerElement) {
+                        // Insérer après l'élément spécifié (ex: après le titre Hn)
+                        containerElement.insertBefore(commentSection, insertAfterElement.nextSibling);
+                    } else {
+                        // Sinon, ajouter à la fin du conteneur
+                        containerElement.appendChild(commentSection);
+                    }
+                }
+                // Vider la section pour la repeupler (au cas où des commentaires ont été supprimés/modifiés)
+                commentSection.innerHTML = '';
+
+                // Ajouter chaque commentaire à la section
+                itemData.comments.forEach(comment => {
+                    const commentDiv = document.createElement('div');
+                    commentDiv.classList.add('comment');
+                    commentDiv.dataset.commentId = comment.id; // ID du commentaire lui-même
+                    // Afficher le texte et éventuellement l'auteur/timestamp
+                    const date = new Date(comment.timestamp).toLocaleString('fr-FR', { short: 'short' });
+                    commentDiv.innerHTML = `<span class="comment-text">${comment.text}</span> <small class="comment-meta">(${comment.author || 'Utilisateur'} - ${date})</small>`;
+                    // TODO: Ajouter un bouton pour supprimer/éditer le commentaire ?
+                    commentSection.appendChild(commentDiv);
+                });
+
+                // S'assurer que la section est visible si l'état global le demande
+                commentSection.classList.toggle('visible', commentsVisible);
+
+            } else {
+                // S'il n'y a pas de commentaires dans les données, supprimer la section du DOM si elle existait
+                if (commentSection) {
+                    commentSection.remove();
+                }
+            }
+        }
+
+        /** Bascule l'affichage global des commentaires. */
+        function handleToggleComments() {
+            commentsVisible = !commentsVisible; // Inverser l'état
+            console.log(`Basculement de la visibilité des commentaires à : ${commentsVisible}`);
+            updateCommentVisibility(); // Appliquer le nouvel état à l'interface
+            updateStatus(`Commentaires ${commentsVisible ? 'visibles' : 'cachés'}.`);
+        }
+
+        /** Met à jour la visibilité des sections de commentaires et des boutons d'ajout dans tout le document. */
+        function updateCommentVisibility() {
+            if (!outputContainer) return; // Ne rien faire si le conteneur n'est pas prêt
+
+            // Mettre à jour la visibilité de toutes les sections de commentaires
+            const commentSections = outputContainer.querySelectorAll('.comment-section');
+            commentSections.forEach(section => section.classList.toggle('visible', commentsVisible));
+
+            // Mettre à jour la visibilité de tous les boutons d'ajout de commentaire
+            const commentButtons = outputContainer.querySelectorAll('.add-comment-btn');
+            commentButtons.forEach(button => button.classList.toggle('visible', commentsVisible));
+
+            // Mettre à jour le texte du bouton principal de bascule
+            if (toggleCommentsBtn) {
+                toggleCommentsBtn.textContent = commentsVisible ? 'Masquer Commentaires' : 'Afficher Commentaires';
+            }
+        }
+
+        // --- Configuration Initiale ---
+        // Attendre que le DOM soit entièrement chargé avant d'initialiser l'application
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM entièrement chargé et parsé. Initialisation de l'application...");
+            initializeApp();
+        });
+
+        console.log("Script initial parsé. Attente de l'événement DOMContentLoaded.");
+
+    </script>
+
+</body>
+</html>
