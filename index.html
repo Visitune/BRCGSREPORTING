@@ -5,12 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Editeur de Rapport BRCGS</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Inclusion des bibliothèques JS nécessaires -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.34.5/docxtemplater.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PizZip/3.1.1/pizzip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 </head>
 <body>
+    <!-- Input fichiers cachés -->
+    <input type="file" id="docx-input" accept=".docx" style="display:none;">
+    <input type="file" id="json-input" accept=".json" style="display:none;">
+
     <!-- Barre de menu -->
     <nav class="menu-bar">
         <button id="load-docx-btn">Charger DOCX</button>
@@ -68,6 +73,7 @@
         </div>
     </div>
 
+    <!-- Script principal -->
     <script src="script.js"></script>
 </body>
 </html>

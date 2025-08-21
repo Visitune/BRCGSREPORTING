@@ -1,3 +1,6 @@
+// --- Fonction principale encapsulant toute la logique ---
+(function () { // IIFE (Immediately Invoked Function Expression) pour éviter les conflits
+
 // --- Variables Globales ---
 let reportData = null;
 let idCounter = 0;
@@ -5,22 +8,10 @@ let commentsVisible = false;
 let groqApiKey = sessionStorage.getItem('groqApiKey') || '';
 let templateModelData = null;
 
-// --- Références DOM ---
-const docxInput = document.getElementById('docx-input');
-const jsonInput = document.getElementById('json-input');
-const loadDocxBtn = document.getElementById('load-docx-btn');
-const loadJsonBtn = document.getElementById('load-json-btn');
-const saveJsonBtn = document.getElementById('save-json-btn');
-const toggleCommentsBtn = document.getElementById('toggle-comments-btn');
-const statusElement = document.getElementById('status');
-const loadingElement = document.getElementById('loading-indicator');
-const loadingMessageElement = document.getElementById('loading-message');
-const outputContainer = document.getElementById('report-output');
-const docInfoElement = document.getElementById('document-info');
-const docStructureElement = document.getElementById('document-structure');
-const sidebarNav = document.getElementById('sidebar-nav');
-const apiKeyInput = document.getElementById('api-key-input');
-const setApiKeyBtn = document.getElementById('set-api-key-btn');
+// --- Références DOM (déclarées, mais initialisées dans initializeApp) ---
+let docxInput, jsonInput, loadDocxBtn, loadJsonBtn, saveJsonBtn, toggleCommentsBtn,
+    statusElement, loadingElement, loadingMessageElement, outputContainer,
+    docInfoElement, docStructureElement, sidebarNav, apiKeyInput, setApiKeyBtn;
 
 // --- Configuration API ---
 const GROQ_API_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
@@ -119,7 +110,7 @@ async function fetchAISuggestion(text, context = {}) {
     }
 
     // Prompt optimisé avec le modèle JSON comme référence
-    const prompt = `
+    let prompt = `
 Tu es un assistant expert en rédaction de rapports d'audit BRCGS.
 Améliore la clarté, la concision et la qualité professionnelle du texte fourni.
 Utilise un ton factuel, clair et professionnel.
@@ -133,9 +124,16 @@ Texte à améliorer :
 
 Contexte :
 Titre du chapitre : ${context.chapterTitle || 'N/A'}
-Type d'élément : ${context.elementType || 'N/A'}
+Type d'élément : ${context.elementType || 'N/A'}`;
 
-Texte amélioré :`;
+    // Si le modèle est chargé, on peut l'ajouter comme exemple de style
+    if (templateModelData) {
+        prompt += `\n\nVoici un exemple de style souhaité extrait du modèle BRCGS :
+Exemple de titre : "${templateModelData.chapters[0]?.title || 'N/A'}"
+Exemple de texte : "${templateModelData.chapters[0]?.content?.[0]?.text?.substring(0, 100) || 'N/A'}..."`;
+    }
+
+    prompt += `\n\nTexte amélioré :`;
 
     try {
         const response = await fetch(GROQ_API_ENDPOINT, {
@@ -220,7 +218,10 @@ function buildSidebarNav(data) {
 
     function addItem(item, levelClass) {
         const li = document.createElement('li');
-        li.textContent = `${item.title || item.text}`;
+        // Ajouter le numéro de clause si disponible (simplifié)
+        const clauseNumber = item.title?.match(/^(\d+(\.\d+)*)/)?.[1] || '';
+        const displayText = clauseNumber ? `${clauseNumber} - ${item.title}` : item.title || item.text?.substring(0, 30) + '...';
+        li.textContent = displayText;
         li.classList.add(levelClass);
         li.dataset.elementId = item.id;
         li.addEventListener('click', () => {
@@ -229,6 +230,9 @@ function buildSidebarNav(data) {
             const targetElement = document.querySelector(`[data-id="${item.id}"]`);
             if (targetElement) {
                 targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // Effet visuel temporaire
+                targetElement.style.outline = '2px solid #3498db';
+                setTimeout(() => { targetElement.style.outline = ''; }, 2000);
             }
         });
         navList.appendChild(li);
@@ -240,11 +244,24 @@ function buildSidebarNav(data) {
             if (chapter.sections && Array.isArray(chapter.sections)) {
                 chapter.sections.forEach(section => {
                     addItem(section, 'section-item');
+                    // Ajouter les tableaux comme éléments de navigation
+                    if (section.content && Array.isArray(section.content)) {
+                        section.content.forEach(contentItem => {
+                            if (contentItem.type === 'table') {
+                                const tableItem = {
+                                    id: contentItem.id,
+                                    title: contentItem.title || `Tableau (${section.title?.match(/^(\d+(\.\d+)*)/)?.[1] || 'N/A'})`
+                                };
+                                addItem(tableItem, 'subsection-item'); // ou un style spécifique pour les tables
+                            }
+                        });
+                    }
                 });
             }
         });
     }
 }
+
 
 function displayReport_enhanced() {
     if (!reportData || !docInfoElement || !docStructureElement) return;
@@ -380,7 +397,8 @@ function displayReport_enhanced() {
 // --- Gestion des événements ---
 function handleContentEdit(event) {
     const targetElement = event.target;
-    const elementId = targetElement.dataset.id;
+    const elementId = targetElement.dataset.id || targetElement.closest('[data-id]')?.dataset.id;
+    if (!elementId) return;
     const dataObject = findElementById(elementId);
     if (dataObject) {
         const newText = targetElement.innerText.trim();
@@ -388,6 +406,13 @@ function handleContentEdit(event) {
             dataObject.text = newText;
         } else if (dataObject.hasOwnProperty('title') && (targetElement.nodeName.startsWith('H') || targetElement.nodeName === 'CAPTION')) {
             dataObject.title = newText;
+            // Mettre à jour le menu latéral si le titre change
+            const navItem = document.querySelector(`#sidebar-nav li[data-element-id="${elementId}"]`);
+            if (navItem) {
+                 const clauseNumber = newText?.match(/^(\d+(\.\d+)*)/)?.[1] || '';
+                 const displayText = clauseNumber ? `${clauseNumber} - ${newText}` : newText || 'Titre sans nom';
+                 navItem.textContent = displayText.substring(0, 50) + (displayText.length > 50 ? '...' : '');
+            }
         }
     }
 }
@@ -411,7 +436,7 @@ function addComment(targetId, text) {
             timestamp: new Date().toISOString()
         };
         targetElementData.comments.push(newComment);
-        displayReport_enhanced();
+        displayReport_enhanced(); // Re-rendre pour afficher le commentaire
         updateStatus(`Commentaire ajouté.`);
         if (!commentsVisible) handleToggleComments();
     }
@@ -427,8 +452,43 @@ async function handleAISuggestClick(event) {
     }
 
     const context = {};
-    if (dataObject.level) context.chapterTitle = dataObject.title;
-    if (dataObject.type) context.elementType = dataObject.type;
+    // Trouver le contexte (chapitre/section parent)
+    if (reportData && reportData.chapters) {
+        outerLoop: for(const chapter of reportData.chapters) {
+            if(chapter.id === targetId) {
+                 context.chapterTitle = chapter.title;
+                 break;
+             }
+            if(chapter.content && chapter.content.some(c => c.id === targetId)) {
+                context.chapterTitle = chapter.title;
+                break;
+            }
+            if(chapter.sections) {
+                for(const section of chapter.sections) {
+                    if(section.id === targetId) {
+                        context.chapterTitle = chapter.title;
+                        context.sectionTitle = section.title;
+                        break outerLoop;
+                    }
+                    if(section.content && section.content.some(c => c.id === targetId)) {
+                        context.chapterTitle = chapter.title;
+                        context.sectionTitle = section.title;
+                        break outerLoop;
+                    }
+                    if(section.subsections) {
+                        for(const subsection of section.subsections) {
+                            if(subsection.id === targetId || (subsection.content && subsection.content.some(c => c.id === targetId))) {
+                                context.chapterTitle = chapter.title;
+                                context.sectionTitle = section.title;
+                                break outerLoop;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    context.elementType = dataObject.type || 'inconnu';
 
     showLoading("Demande de suggestion...");
     const suggestion = await fetchAISuggestion(dataObject.text, context);
@@ -443,28 +503,32 @@ async function handleAISuggestClick(event) {
         const cancelBtn = document.getElementById('cancel-suggestion');
         const expandBtn = document.getElementById('expand-suggestion');
 
+        if (!modal || !originalTextEl || !suggestedTextEl || !acceptBtn || !rejectBtn || !cancelBtn || !expandBtn) {
+             console.error("Éléments du popup IA manquants dans le DOM.");
+             updateStatus("Erreur UI: popup IA incomplet.", true);
+             return;
+        }
+
         originalTextEl.textContent = dataObject.text;
-        suggestedTextEl.value = suggestion;
+        suggestedTextEl.textContent = suggestion; // Utiliser textContent pour <pre>
 
         function closeModal() {
             modal.style.display = 'none';
-            acceptBtn.removeEventListener('click', onAccept);
-            rejectBtn.removeEventListener('click', onReject);
-            cancelBtn.removeEventListener('click', onCancel);
-            expandBtn.removeEventListener('click', onExpand);
         }
 
         function onAccept() {
             const targetElement = document.querySelector(`[data-id="${targetId}"]`);
             if (targetElement) {
-                targetElement.textContent = suggestedTextEl.value;
+                targetElement.textContent = suggestedTextEl.textContent; // Utiliser textContent
                 const inputEvent = new Event('input', { bubbles: true });
                 targetElement.dispatchEvent(inputEvent);
+                updateStatus("Suggestion acceptée.");
             }
             closeModal();
         }
 
         function onReject() {
+            updateStatus("Suggestion refusée.");
             closeModal();
         }
 
@@ -473,25 +537,33 @@ async function handleAISuggestClick(event) {
         }
 
         function onExpand() {
-            suggestedTextEl.style.maxHeight = 'none';
+            suggestedTextEl.parentElement.style.maxHeight = 'none';
             expandBtn.style.display = 'none';
         }
 
-        acceptBtn.addEventListener('click', onAccept);
-        rejectBtn.addEventListener('click', onReject);
-        cancelBtn.addEventListener('click', onCancel);
-        expandBtn.addEventListener('click', onExpand);
+        // Nettoyer les écouteurs précédents pour éviter les doublons
+        acceptBtn.replaceWith(acceptBtn.cloneNode(true));
+        rejectBtn.replaceWith(rejectBtn.cloneNode(true));
+        cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+        expandBtn.replaceWith(expandBtn.cloneNode(true));
+
+        // Ajouter les nouveaux écouteurs
+        document.getElementById('accept-suggestion').addEventListener('click', onAccept);
+        document.getElementById('reject-suggestion').addEventListener('click', onReject);
+        document.getElementById('cancel-suggestion').addEventListener('click', onCancel);
+        document.getElementById('expand-suggestion').addEventListener('click', onExpand);
 
         modal.style.display = 'flex';
     }
 }
 
+
 function handleToggleComments() {
     commentsVisible = !commentsVisible;
     if (toggleCommentsBtn) {
-        toggleCommentsBtn.textContent = commentsVisible ? 'Masquer' : 'Afficher';
+        toggleCommentsBtn.textContent = commentsVisible ? 'Masquer Commentaires' : 'Afficher Commentaires';
     }
-    displayReport_enhanced();
+    displayReport_enhanced(); // Re-rendre pour appliquer la visibilité
 }
 
 function handleSaveJson() {
@@ -793,6 +865,38 @@ function handleJsonFileSelect(event) {
 
 // --- Initialisation ---
 async function initializeApp() {
+    console.log("Initialisation de l'application...");
+    // Récupérer les éléments DOM
+    docxInput = document.getElementById('docx-input');
+    jsonInput = document.getElementById('json-input');
+    loadDocxBtn = document.getElementById('load-docx-btn');
+    loadJsonBtn = document.getElementById('load-json-btn');
+    saveJsonBtn = document.getElementById('save-json-btn');
+    toggleCommentsBtn = document.getElementById('toggle-comments-btn');
+    statusElement = document.getElementById('status');
+    loadingElement = document.getElementById('loading-indicator');
+    loadingMessageElement = document.getElementById('loading-message');
+    outputContainer = document.getElementById('report-output');
+    docInfoElement = document.getElementById('document-info');
+    docStructureElement = document.getElementById('document-structure');
+    sidebarNav = document.getElementById('sidebar-nav');
+    apiKeyInput = document.getElementById('api-key-input');
+    setApiKeyBtn = document.getElementById('set-api-key-btn');
+
+    // Vérifier que tous les éléments sont présents
+    const requiredElements = [
+        docxInput, jsonInput, loadDocxBtn, loadJsonBtn, saveJsonBtn, toggleCommentsBtn,
+        statusElement, loadingElement, loadingMessageElement, outputContainer,
+        docInfoElement, docStructureElement, sidebarNav, apiKeyInput, setApiKeyBtn
+    ];
+    if (requiredElements.includes(null) || requiredElements.includes(undefined)) {
+        const errorMsg = "Erreur Critique: Impossible de trouver tous les éléments HTML nécessaires. Vérifiez les IDs dans le HTML et le JS.";
+        console.error(errorMsg);
+        alert(errorMsg);
+        if (statusElement) updateStatus("ERREUR D'INITIALISATION", true);
+        return;
+    }
+
     if (groqApiKey) {
         apiKeyInput.value = '••••••••••••••••';
         updateStatus("Clé API chargée.");
@@ -800,15 +904,24 @@ async function initializeApp() {
 
     // Charger le modèle JSON local
     try {
+        showLoading("Chargement du modèle...");
         const response = await fetch('F908-food-audit-report-template _ Micron2_ 31st Oct 2024_edited.json');
         if (response.ok) {
             templateModelData = await response.json();
-            console.log("Modèle JSON chargé.");
+            console.log("Modèle JSON chargé avec succès.");
+            updateStatus("Modèle chargé. Prêt.");
+        } else {
+             throw new Error(`Erreur HTTP ${response.status}`);
         }
     } catch (error) {
         console.warn("Modèle JSON non trouvé ou erreur:", error);
+        updateStatus(`Erreur chargement modèle: ${error.message}. L'IA pourrait être moins précise.`, true);
+    } finally {
+         hideLoading(); // Masquer le loading une fois le modèle traité
     }
 
+
+    // Attacher les écouteurs d'événements
     loadDocxBtn.addEventListener('click', () => docxInput.click());
     loadJsonBtn.addEventListener('click', () => jsonInput.click());
     saveJsonBtn.addEventListener('click', handleSaveJson);
@@ -833,8 +946,13 @@ async function initializeApp() {
 
     saveJsonBtn.disabled = true;
     toggleCommentsBtn.disabled = true;
+    console.log("Application initialisée.");
 }
 
+// --- Démarrage de l'application lorsque le DOM est prêt ---
 document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM chargé. Démarrage de l'initialisation.");
     initializeApp();
 });
+
+})(); // Fin de l'IIFE
