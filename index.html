@@ -3,13 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Editeur de Rapport BRCGS</title>
+    <title>Assistant Rapport BRCGS</title>
     <link rel="stylesheet" href="style.css">
     <!-- Inclusion des bibliothèques JS nécessaires -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.34.5/docxtemplater.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PizZip/3.1.1/pizzip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/diff2html/bundles/css/diff2html.min.css" />
 </head>
 <body>
     <!-- Input fichiers cachés -->
@@ -17,15 +14,26 @@
     <input type="file" id="json-input" accept=".json" style="display:none;">
 
     <!-- Barre de menu -->
-    <nav class="menu-bar">
-        <button id="load-docx-btn">Charger DOCX</button>
-        <button id="load-json-btn">Charger JSON</button>
-        <button id="save-json-btn" disabled>Sauvegarder JSON</button>
-        <button id="toggle-comments-btn" disabled>Afficher Commentaires</button>
-        <input type="password" id="api-key-input" placeholder="Clé API Groq">
-        <button id="set-api-key-btn">Définir</button>
-        <span class="status" id="status">Prêt.</span>
-    </nav>
+    <header class="menu-bar">
+        <div class="logo">
+            <span role="img" aria-label="shield">🛡️</span> BRCGS Assistant
+        </div>
+        <div class="menu-group">
+            <button id="load-docx-btn" title="Charger un rapport depuis un fichier .docx">Charger DOCX</button>
+            <button id="load-json-btn" title="Charger un rapport en cours depuis un fichier .json">Charger JSON</button>
+        </div>
+        <div class="menu-group">
+            <button id="save-json-btn" disabled title="Sauvegarder le rapport actuel au format .json">Sauvegarder JSON</button>
+            <button id="toggle-comments-btn" disabled>Afficher Commentaires</button>
+        </div>
+        <div class="menu-group api-group">
+            <input type="password" id="api-key-input" placeholder="Clé API Groq">
+            <button id="set-api-key-btn">Définir</button>
+        </div>
+        <div class="status-container">
+            <span class="status" id="status">Prêt.</span>
+        </div>
+    </header>
 
     <!-- Indicateur de chargement -->
     <div id="loading-indicator">
@@ -35,16 +43,43 @@
 
     <!-- Conteneur principal -->
     <div class="main-container">
-        <!-- Menu latéral -->
+        <!-- Menu latéral des chapitres principaux -->
         <aside class="sidebar">
-            <h3>Navigation</h3>
+            <h3>Chapitres Principaux</h3>
             <ul id="sidebar-nav"></ul>
         </aside>
 
         <!-- Zone de contenu -->
         <main class="content-area">
-            <div id="report-output">
-                <div id="document-info"></div>
+             <div id="welcome-screen">
+                <h1>Bienvenue dans l'Assistant de Rapport BRCGS</h1>
+                <p>Le moyen le plus simple de mettre à jour vos rapports d'audit d'une année sur l'autre.</p>
+                <div class="instructions">
+                    <div class="step">
+                        <h2>1. Chargez le rapport de l'année dernière</h2>
+                        <p>Cliquez sur <strong>Charger DOCX</strong> pour importer le rapport de l'année précédente, ou <strong>Charger JSON</strong> pour continuer à travailler sur un fichier déjà édité.</p>
+                    </div>
+                    <div class="step">
+                        <h2>2. Mettez à jour et améliorez</h2>
+                        <p>Modifiez directement le texte. Le système suivra vos changements. Utilisez les icônes pour obtenir de l'aide :<br>
+                           <span class="icon-key">💡</span> pour comparer avec le modèle BRCGS officiel.<br>
+                           <span class="icon-key">🤖</span> pour recevoir une suggestion de réécriture par l'IA.</p>
+                    </div>
+                    <div class="step">
+                        <h2>3. Sauvegardez votre nouveau rapport</h2>
+                        <p>Cliquez sur <strong>Sauvegarder JSON</strong> pour enregistrer votre rapport mis à jour. Vous pourrez y revenir à tout moment.</p>
+                    </div>
+                </div>
+            </div>
+            <div id="report-output" style="display: none;">
+                <div id="document-info">
+                    <div id="info-content"></div>
+                    <div class="legend">
+                        <strong>Légende :</strong>
+                        <span class="legend-item legend-user">Vos modifications</span>
+                        <span class="legend-item legend-ai">Modifications par l'IA</span>
+                    </div>
+                </div>
                 <div id="document-structure"></div>
             </div>
         </main>
@@ -53,27 +88,36 @@
     <!-- Popup IA -->
     <div id="ai-modal" class="modal">
         <div class="modal-content">
-            <h3>Suggestion d'amélioration IA</h3>
-            <div class="original-text-wrapper">
-                <p><strong>Texte original:</strong></p>
-                <pre id="original-text" class="text-box"></pre>
-            </div>
-            <div class="suggestion-wrapper">
-                <p><strong>Suggestion:</strong></p>
-                <div class="suggestion-container">
-                    <pre id="suggested-text" class="text-box"></pre>
-                </div>
-                <button id="expand-suggestion">Afficher tout</button>
-            </div>
+            <span class="close-button" id="ai-modal-close">&times;</span>
+            <h3>🤖 Suggestion d'Amélioration IA</h3>
+            <p>L'IA a réécrit votre texte. Les ajouts sont en <span class="diff-green">vert</span> et les suppressions en <span class="diff-red">rouge</span>.</p>
+            <div id="diff-output"></div>
             <div class="modal-buttons">
-                <button id="accept-suggestion">Accepter</button>
-                <button id="reject-suggestion">Refuser</button>
-                <button id="cancel-suggestion">Annuler</button>
+                <button id="accept-suggestion" class="btn-success">Appliquer la Suggestion</button>
+                <button id="reject-suggestion" class="btn-secondary">Ignorer</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Popup de visualisation du modèle -->
+    <div id="template-modal" class="modal">
+        <div class="modal-content">
+             <span class="close-button" id="template-modal-close">&times;</span>
+            <h3>💡 Texte du Modèle BRCGS</h3>
+            <p>Voici le texte de référence du modèle officiel pour cette section.</p>
+            <div id="template-text-content" class="text-box"></div>
+             <div class="modal-buttons">
+                <button id="close-template-modal" class="btn-secondary">Fermer</button>
             </div>
         </div>
     </div>
 
-    <!-- Script principal -->
+    <!-- Bibliothèques externes -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script> <!-- **AJOUTÉ POUR CORRIGER L'IA** -->
+    <script src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html.min.js"></script>
+    
+    <!-- Script principal de l'application -->
     <script src="script.js"></script>
 </body>
 </html>
