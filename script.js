@@ -15,7 +15,7 @@
     // --- Configuration ---
     const API_CONFIG = {
         ENDPOINT: "https://api.groq.com/openai/v1/chat/completions",
-        MODEL: "llama3-8b-8192",
+        MODEL: "openai/gpt-oss-120b", // Updated to the user-specified model
         TEMPLATE_FILE: 'F908-food-audit-report-template _ Micron2_ 31st Oct 2024_edited.json'
     };
 
@@ -583,29 +583,75 @@
         const getParagraphText = p => Array.from(p.getElementsByTagName('w:t')).map(t => t.textContent).join('');
         const getParagraphStyle = p => p.querySelector('pPr > pStyle')?.getAttribute('w:val') || '';
 
+        function getHeadingLevel(style) {
+            if (style.toLowerCase().includes('heading1')) return 1;
+            if (style.toLowerCase().includes('heading2')) return 2;
+            if (style.toLowerCase().includes('heading3')) return 3;
+            // Add more heading levels as needed
+            return 0; // Not a heading or unknown level
+        }
+
         Array.from(body.children).forEach(element => {
             if (element.nodeName === 'w:p') {
                 const text = getParagraphText(element).trim();
                 const style = getParagraphStyle(element);
-                const isHeading = style.toLowerCase().includes('heading') || text.match(/^\d+\s|^\d+\.\d+\s/);
+                const headingLevel = getHeadingLevel(style);
+                const isNumberedHeading = text.match(/^(\d+(\.\d+)*)\s/);
 
-                if (isHeading && text) {
-                    const newChapter = { 
+                if ((headingLevel > 0 || isNumberedHeading) && text) {
+                    const level = headingLevel > 0 ? headingLevel : (isNumberedHeading ? text.split(' ')[0].split('.').length : 1);
+                    
+                    const newItem = { 
                         id: generateId(), 
                         title: text, 
                         originalTitle: text, 
                         status: 'original', 
-                        level: 1, 
-                        style, 
+                        level: level, 
                         content: [], 
                         sections: [] 
                     };
+
                     if (currentChapter.title === "Contenu Initial" && currentChapter.content.length === 0) {
-                        chapters[0] = newChapter; // Replace the initial placeholder
-                        currentChapter = newChapter;
+                        chapters[0] = newItem;
+                        currentChapter = newItem;
                     } else {
-                        chapters.push(newChapter);
-                        currentChapter = newChapter;
+                        // Logic to nest sections based on level
+                        let parent = chapters;
+                        let lastItem = chapters[chapters.length - 1];
+
+                        while (lastItem && level > lastItem.level) {
+                            if (!lastItem.sections) lastItem.sections = [];
+                            parent = lastItem.sections;
+                            lastItem = lastItem.sections[lastItem.sections.length - 1];
+                        }
+                        // If current level is less than or equal to last item's level, find the correct parent
+                        while (lastItem && level <= lastItem.level) {
+                            // Traverse up to find the correct parent
+                            let foundParent = false;
+                            function findParentOfLevel(items, targetLevel) {
+                                for (const item of items) {
+                                    if (item.sections) {
+                                        const res = findParentOfLevel(item.sections, targetLevel);
+                                        if (res) return res;
+                                    }
+                                    if (item.level === targetLevel - 1) {
+                                        return item;
+                                    }
+                                }
+                                return null;
+                            }
+                            const potentialParent = findParentOfLevel(chapters, level);
+                            if (potentialParent) {
+                                parent = potentialParent.sections;
+                                lastItem = potentialParent;
+                                foundParent = true;
+                                break;
+                            }
+                            break; // Should not happen if structure is consistent
+                        }
+                        
+                        parent.push(newItem);
+                        currentChapter = newItem;
                     }
                 } else if (text) {
                     currentChapter.content.push({ 
@@ -651,6 +697,44 @@
             tableData.rows.push(rowData);
         });
         return tableData;
+    }
+
+    function buildSidebarNav(data) {
+        dom.sidebarNav.innerHTML = '';
+        if (!data.chapters) return;
+
+        function addItemsToNav(items, parentUl, level = 0) {
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = item.title;
+                li.dataset.elementId = item.id;
+                li.style.paddingLeft = `${16 + level * 15}px`; // Indent sub-chapters
+                li.addEventListener('click', () => {
+                    dom.sidebarNav.querySelectorAll('li').forEach(el => el.classList.remove('active'));
+                    li.classList.add('active');
+                    const targetElement = document.querySelector(`.report-element[data-id="${item.id}"]`);
+                    if (targetElement) {
+                        targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        targetElement.style.transition = 'outline 0.1s ease-in-out, background-color 0.5s ease';
+                        targetElement.style.backgroundColor = '#EBF8FF';
+                        targetElement.style.outline = '2px solid var(--primary-color)';
+                        setTimeout(() => { 
+                            targetElement.style.outline = '';
+                            targetElement.style.backgroundColor = '';
+                        }, 2500);
+                    }
+                });
+                parentUl.appendChild(li);
+
+                if (item.sections && item.sections.length > 0) {
+                    const subUl = document.createElement('ul');
+                    li.appendChild(subUl);
+                    addItemsToNav(item.sections, subUl, level + 1);
+                }
+            });
+        }
+
+        addItemsToNav(data.chapters, dom.sidebarNav);
     }
     
     // --- AI & Template Logic ---

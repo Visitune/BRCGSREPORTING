@@ -216,6 +216,10 @@ button:disabled {
     background-color: #F7FAFC;
 }
 
+.content-area p {
+    margin-bottom: 1em; /* Add space below paragraphs */
+}
+
 [contenteditable]:focus {
     outline: 2px solid var(--primary-color);
     background-color: #F7FAFC;
